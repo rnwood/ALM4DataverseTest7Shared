@@ -1,0 +1,151 @@
+name: Deploy to Environment (Reusable)
+
+# Reusable workflow: download build artifacts and deploy them to a single
+# Dataverse environment.
+#
+# Call this from your repo's DEPLOY-main.yml (once per environment):
+#   uses: rnwood/ALM4Dataverse/.github/workflows/deploy-environment-reusable.yml@stable
+#
+# CREDENTIALS — two supported approaches (see docs/config/github-secrets.md):
+#
+#   1. GitHub Environments (recommended for Teams/Enterprise):
+#      Store AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_CLIENT_SECRET, DATAVERSE_URL
+#      and DATAVERSESERVICEACCOUNTUPN as secrets/variables in a GitHub environment
+#      whose name matches environment-name (e.g. "TEST-main").
+#      Individual DataverseConnRef_* and DataverseEnvVar_* variables can be stored
+#      in the environment and are picked up automatically by the deploy script.
+#      GitHub environment protection rules (required reviewers, wait timers, etc.)
+#      require GitHub Pro, Team, or Enterprise for private repositories.
+#
+#   2. Prefixed global secrets (works on all licence levels including Free):
+#      Store credentials at repo level with per-environment prefixes and pass them
+#      explicitly via the `secrets:` and `with:` blocks.  Connection references and
+#      environment variables can be supplied as JSON objects.
+#      NOTE: No approval/gate mechanism is available without environment protection
+#      rules (see docs/setup/github-setup.md for details).
+
+on:
+  workflow_call:
+    inputs:
+      environment-name:
+        required: true
+        type: string
+        description: >
+          Name of the deployment environment (e.g. "TEST-main", "UAT-main", "PROD").
+          Must match the name of the GitHub environment when using the GitHub
+          Environments approach.  GitHub creates the environment automatically if it
+          does not yet exist (with no protection rules).
+      build-run-id:
+        required: true
+        type: string
+        description: >
+          The GitHub Actions run ID of the BUILD workflow run whose artifacts should
+          be deployed.  Typically ${{ github.event.workflow_run.id }} when triggered
+          by a workflow_run event, or a user-supplied value for manual dispatch.
+      dataverse-url:
+        type: string
+        default: ''
+        description: >
+          URL of the target Dataverse environment
+          (e.g. https://yourorg-test.crm.dynamics.com).
+          If omitted, DATAVERSE_URL from the GitHub environment is used.
+      dataverse-connection-refs:
+        type: string
+        default: ''
+        description: >
+          JSON object mapping Dataverse connection reference schema names to
+          connection IDs.  Example: {"contoso_sharedsharepointonline": "guid"}.
+          Only needed when NOT using GitHub environment variables named
+          DataverseConnRef_<schema_name>.
+      dataverse-env-vars:
+        type: string
+        default: ''
+        description: >
+          JSON object mapping Dataverse environment variable schema names to
+          values.  Example: {"contoso_APIEndpoint": "https://api.contoso.com"}.
+          Only needed when NOT using GitHub environment variables named
+          DataverseEnvVar_<schema_name>.
+      alm-repository:
+        type: string
+        default: 'rnwood/ALM4Dataverse'
+        description: 'ALM4Dataverse repository to use (change this if you are using a fork)'
+      alm-ref:
+        type: string
+        default: 'stable'
+        description: 'ALM4Dataverse git ref (tag or branch) to use'
+    secrets:
+      azure-client-id:
+        required: false
+        description: >
+          Azure app registration client ID.
+          If omitted, AZURE_CLIENT_ID from the GitHub environment is used.
+      azure-client-secret:
+        required: false
+        description: >
+          Azure client secret value.
+          If omitted, AZURE_CLIENT_SECRET from the GitHub environment is used.
+      azure-tenant-id:
+        required: false
+        description: >
+          Azure tenant (directory) ID.
+          If omitted, AZURE_TENANT_ID from the GitHub environment is used.
+      dataverse-service-account-upn:
+        required: false
+        description: >
+          UPN (email) of the Dataverse service account used to activate
+          workflows/flows after deployment.
+          If omitted, DATAVERSESERVICEACCOUNTUPN from the GitHub environment is used.
+
+jobs:
+  deploy:
+    runs-on: windows-latest
+    environment: ${{ inputs.environment-name }}
+    permissions:
+      actions: read  # required to download artifacts from another workflow run
+    env:
+      AZURE_CLIENT_ID:     ${{ secrets.azure-client-id     || secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID:     ${{ secrets.azure-tenant-id     || secrets.AZURE_TENANT_ID }}
+      AZURE_CLIENT_SECRET: ${{ secrets.azure-client-secret || secrets.AZURE_CLIENT_SECRET }}
+      DATAVERSE_URL:       ${{ inputs.dataverse-url || vars.DATAVERSE_URL || secrets.DATAVERSE_URL }}
+      DATAVERSESERVICEACCOUNTUPN: >-
+        ${{ secrets.dataverse-service-account-upn
+            || secrets.DATAVERSESERVICEACCOUNTUPN
+            || vars.DATAVERSESERVICEACCOUNTUPN }}
+      DATAVERSE_CONNECTION_REFS: ${{ inputs.dataverse-connection-refs }}
+      DATAVERSE_ENV_VARS:        ${{ inputs.dataverse-env-vars }}
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: artifacts
+          run-id: ${{ inputs.build-run-id }}
+          github-token: ${{ github.token }}
+          path: artifacts
+
+      - name: Install Dependencies, Connect and Deploy
+        shell: pwsh
+        working-directory: artifacts
+        run: |
+          # Apply connection references from JSON input.
+          # When using GitHub Environments, individual DataverseConnRef_* variables
+          # configured in the environment are already present as OS environment
+          # variables and will be picked up directly by deploy.ps1.
+          if (-not [string]::IsNullOrEmpty($env:DATAVERSE_CONNECTION_REFS)) {
+            $connRefs = $env:DATAVERSE_CONNECTION_REFS | ConvertFrom-Json
+            foreach ($prop in $connRefs.PSObject.Properties) {
+              [System.Environment]::SetEnvironmentVariable("DataverseConnRef_$($prop.Name)", $prop.Value)
+            }
+          }
+
+          # Apply Dataverse environment variable values from JSON input.
+          if (-not [string]::IsNullOrEmpty($env:DATAVERSE_ENV_VARS)) {
+            $envVars = $env:DATAVERSE_ENV_VARS | ConvertFrom-Json
+            foreach ($prop in $envVars.PSObject.Properties) {
+              [System.Environment]::SetEnvironmentVariable("DataverseEnvVar_$($prop.Name)", $prop.Value)
+            }
+          }
+
+          & "./alm/pipelines/scripts/installdependencies.ps1"
+          & "./alm/pipelines/scripts/connect.ps1" -Url $env:DATAVERSE_URL
+          & "./alm/pipelines/scripts/deploy.ps1" -ArtifactsPath "."

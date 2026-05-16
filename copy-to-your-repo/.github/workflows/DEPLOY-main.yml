@@ -1,0 +1,120 @@
+name: DEPLOY-main
+
+# Deploys build artifacts to one or more Dataverse environments in sequence.
+#
+# Triggers automatically when BUILD completes successfully on the main branch,
+# or can be triggered manually by providing a BUILD run ID.
+#
+# SETUP REQUIRED:
+#   1. Uncomment and repeat the deploy-environment blocks below for each target
+#      environment (TEST, UAT, PROD, etc.).
+#   2. Configure credentials — see docs/setup/github-setup.md for both approaches:
+#      - GitHub Environments (recommended): configure each environment in GitHub
+#        repo Settings > Environments with required secrets/variables.
+#        Add "Required reviewers" protection rules for approval gates
+#        (requires GitHub Pro, Team, or Enterprise for private repositories).
+#      - Prefixed global secrets: configure per-environment secrets at repo level
+#        and pass them explicitly (works on all licence levels, no approval gates).
+#
+# See docs/usage/deploying.md
+
+on:
+  workflow_run:
+    workflows: ['BUILD']
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      build-run-id:
+        description: 'BUILD workflow run ID to deploy (find in Actions tab)'
+        required: true
+        type: string
+
+jobs:
+
+  # ── APPROACH 1: GitHub Environments (recommended) ───────────────────────────
+  #
+  # Prerequisites: create a GitHub environment for each target in repo Settings >
+  # Environments, add required secrets/variables, and optionally add "Required
+  # reviewers" protection rules (Pro/Team/Enterprise for private repos).
+  #
+  # Uncomment and repeat for each environment:
+
+  # deploy-test:
+  #   if: >
+  #     github.event_name == 'workflow_dispatch' ||
+  #     github.event.workflow_run.conclusion == 'success'
+  #   uses: rnwood/ALM4Dataverse/.github/workflows/deploy-environment-reusable.yml@stable
+  #   with:
+  #     environment-name: TEST-main
+  #     build-run-id: >-
+  #       ${{ github.event_name == 'workflow_dispatch'
+  #             && inputs.build-run-id
+  #             || github.event.workflow_run.id }}
+  #   secrets: inherit
+
+  # deploy-prod:
+  #   needs: deploy-test
+  #   if: >
+  #     github.event_name == 'workflow_dispatch' ||
+  #     github.event.workflow_run.conclusion == 'success'
+  #   uses: rnwood/ALM4Dataverse/.github/workflows/deploy-environment-reusable.yml@stable
+  #   with:
+  #     environment-name: PROD
+  #     build-run-id: >-
+  #       ${{ github.event_name == 'workflow_dispatch'
+  #             && inputs.build-run-id
+  #             || github.event.workflow_run.id }}
+  #   secrets: inherit
+
+
+  # ── APPROACH 2: Prefixed global secrets (all licence levels) ─────────────────
+  #
+  # Store per-environment credentials as repo-level secrets/variables using the
+  # naming convention TEST_MAIN_* / PROD_* etc.
+  # See docs/config/github-secrets.md for the full list of names.
+  #
+  # No approval gates available without environment protection rules.
+  #
+  # Uncomment and repeat for each environment:
+
+  # deploy-test:
+  #   if: >
+  #     github.event_name == 'workflow_dispatch' ||
+  #     github.event.workflow_run.conclusion == 'success'
+  #   uses: rnwood/ALM4Dataverse/.github/workflows/deploy-environment-reusable.yml@stable
+  #   with:
+  #     environment-name: TEST-main
+  #     build-run-id: >-
+  #       ${{ github.event_name == 'workflow_dispatch'
+  #             && inputs.build-run-id
+  #             || github.event.workflow_run.id }}
+  #     dataverse-url:           ${{ vars.TEST_MAIN_DATAVERSE_URL }}
+  #     dataverse-connection-refs: ${{ vars.TEST_MAIN_DATAVERSE_CONN_REFS }}
+  #     dataverse-env-vars:        ${{ vars.TEST_MAIN_DATAVERSE_ENV_VARS }}
+  #   secrets:
+  #     azure-client-id:               ${{ secrets.TEST_MAIN_AZURE_CLIENT_ID }}
+  #     azure-client-secret:           ${{ secrets.TEST_MAIN_AZURE_CLIENT_SECRET }}
+  #     azure-tenant-id:               ${{ secrets.TEST_MAIN_AZURE_TENANT_ID }}
+  #     dataverse-service-account-upn: ${{ secrets.TEST_MAIN_DATAVERSE_SERVICE_ACCOUNT_UPN }}
+
+  # deploy-prod:
+  #   needs: deploy-test
+  #   if: >
+  #     github.event_name == 'workflow_dispatch' ||
+  #     github.event.workflow_run.conclusion == 'success'
+  #   uses: rnwood/ALM4Dataverse/.github/workflows/deploy-environment-reusable.yml@stable
+  #   with:
+  #     environment-name: PROD
+  #     build-run-id: >-
+  #       ${{ github.event_name == 'workflow_dispatch'
+  #             && inputs.build-run-id
+  #             || github.event.workflow_run.id }}
+  #     dataverse-url:           ${{ vars.PROD_DATAVERSE_URL }}
+  #     dataverse-connection-refs: ${{ vars.PROD_DATAVERSE_CONN_REFS }}
+  #     dataverse-env-vars:        ${{ vars.PROD_DATAVERSE_ENV_VARS }}
+  #   secrets:
+  #     azure-client-id:               ${{ secrets.PROD_AZURE_CLIENT_ID }}
+  #     azure-client-secret:           ${{ secrets.PROD_AZURE_CLIENT_SECRET }}
+  #     azure-tenant-id:               ${{ secrets.PROD_AZURE_TENANT_ID }}
+  #     dataverse-service-account-upn: ${{ secrets.PROD_DATAVERSE_SERVICE_ACCOUNT_UPN }}
