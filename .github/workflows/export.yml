@@ -62,7 +62,9 @@ on:
 jobs:
   export:
     runs-on: windows-latest
-    environment: ${{ inputs.environment-name != '' && inputs.environment-name || format('Dev-{0}', github.ref_name) }}
+    environment:
+      name: ${{ inputs.environment-name != '' && inputs.environment-name || format('Dev-{0}', github.ref_name) }}
+      deployment: false   # export reads from Dataverse; no deployment record needed
     permissions:
       contents: write  # push changes back to the repository
       id-token: write  # request OIDC token for Workload Identity Federation
