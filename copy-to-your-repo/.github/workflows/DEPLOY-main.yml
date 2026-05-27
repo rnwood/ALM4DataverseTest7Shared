@@ -28,6 +28,7 @@ on:
         type: string
       target-environment:
         description: 'Target environment to deploy to'
+        # Make this not required when using `promotion-mode: environment-approval`:
         required: true
         type: choice
         options:

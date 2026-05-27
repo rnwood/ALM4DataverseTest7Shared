@@ -741,15 +741,40 @@ jobs:
             }
           }
 
-          function Update-TagRef {
+          function Resolve-TagTargetSha {
             param(
-              [Parameter(Mandatory)][string]$TagName,
-              [Parameter(Mandatory)][string]$Sha
+              [Parameter(Mandatory)][object]$TagRef
             )
 
+            $objectType = ''
+            if ($TagRef.object -and $TagRef.object.PSObject.Properties.Name -contains 'type') {
+              $objectType = [string]$TagRef.object.type
+            }
+
+            $objectSha = ''
+            if ($TagRef.object -and $TagRef.object.PSObject.Properties.Name -contains 'sha') {
+              $objectSha = [string]$TagRef.object.sha
+            }
+
+            if ([string]::IsNullOrWhiteSpace($objectSha)) {
+              return ''
+            }
+
+            if ($objectType -ieq 'tag') {
+              $tagObject = Invoke-RestMethod -Uri "$apiBase/git/tags/$objectSha" -Headers $headers
+              if ($null -ne $tagObject.object -and $tagObject.object.PSObject.Properties.Name -contains 'sha') {
+                return [string]$tagObject.object.sha
+              }
+            }
+
+            return $objectSha
+          }
+
+          function Remove-TagRef {
+            param([Parameter(Mandatory)][string]$TagName)
+
             $encodedTag = [Uri]::EscapeDataString($TagName)
-            $body = @{ sha = $Sha; force = $true } | ConvertTo-Json
-            Invoke-RestMethod -Method PATCH -Uri "$apiBase/git/refs/tags/$encodedTag" -Headers $headers -Body $body | Out-Null
+            Invoke-RestMethod -Method DELETE -Uri "$apiBase/git/refs/tags/$encodedTag" -Headers $headers | Out-Null
           }
 
           # Resolve the HEAD commit SHA of the originating BUILD run.
@@ -781,12 +806,21 @@ jobs:
                 New-TagRef -TagName $environmentPointerTag -Sha $sha
                 Write-Host "✅ Environment pointer tag '$environmentPointerTag' created successfully."
               }
-              elseif ([string]$existingPointerTag.object.sha -eq $sha) {
-                Write-Host "ℹ️  Environment pointer tag '$environmentPointerTag' already points to $sha — no update needed."
-              }
               else {
-                Update-TagRef -TagName $environmentPointerTag -Sha $sha
-                Write-Host "✅ Environment pointer tag '$environmentPointerTag' updated successfully."
+                $existingPointerTargetSha = Resolve-TagTargetSha -TagRef $existingPointerTag
+                if ([string]::IsNullOrWhiteSpace($existingPointerTargetSha)) {
+                  throw "Could not resolve the existing target SHA for environment pointer tag '$environmentPointerTag'."
+                }
+
+                if ($existingPointerTargetSha -eq $sha) {
+                  Write-Host "ℹ️  Environment pointer tag '$environmentPointerTag' already points to $sha — no update needed."
+                }
+                else {
+                  Write-Host "Environment pointer tag '$environmentPointerTag' currently points to $existingPointerTargetSha — recreating at $sha."
+                  Remove-TagRef -TagName $environmentPointerTag
+                  New-TagRef -TagName $environmentPointerTag -Sha $sha
+                  Write-Host "✅ Environment pointer tag '$environmentPointerTag' updated successfully."
+                }
               }
             } catch {
               Write-Error "Failed to update environment pointer tag '$environmentPointerTag': $_"
