@@ -430,19 +430,27 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
+          function Get-GitTagRefRelativePath {
+            param([Parameter(Mandatory)][string]$TagName)
+
+            # GitHub expects slash-separated ref names here (for example tags/deployed/test).
+            # Encoding the whole tag turns '/' into '%2F', which can make existing refs look missing.
+            return "git/ref/tags/$TagName"
+          }
+
           # Verify the previous environment's success-gate-tag exists before proceeding.
           # This enforces ordered deployment promotion without environment protection rules.
-          $gateTag    = '${{ steps.resolve.outputs.required_gate_tag }}'
-          $encodedTag = [Uri]::EscapeDataString($gateTag)
-          $apiBase    = "https://api.github.com/repos/$($env:GITHUB_REPOSITORY)"
-          $headers    = @{
+          $gateTag = '${{ steps.resolve.outputs.required_gate_tag }}'
+          $apiBase = "https://api.github.com/repos/$($env:GITHUB_REPOSITORY)"
+          $headers = @{
             Authorization = "Bearer $($env:GITHUB_TOKEN)"
             Accept        = "application/vnd.github+json"
             "X-GitHub-Api-Version" = "2022-11-28"
           }
           Write-Host "Checking for required gate tag: $gateTag"
           try {
-            Invoke-RestMethod -Uri "$apiBase/git/ref/tags/$encodedTag" -Headers $headers | Out-Null
+            $relativePath = Get-GitTagRefRelativePath -TagName $gateTag
+            Invoke-RestMethod -Uri "$apiBase/$relativePath" -Headers $headers | Out-Null
             Write-Host "✅ Gate tag '$gateTag' found — proceeding with deployment."
           } catch {
             $status = $_.Exception.Response.StatusCode.value__
@@ -722,15 +730,23 @@ jobs:
             Invoke-RestMethod -Method POST -Uri "$apiBase/git/refs" -Headers $headers -Body $body | Out-Null
           }
 
+          function Get-GitTagRefRelativePath {
+            param([Parameter(Mandatory)][string]$TagName)
+
+            # GitHub expects slash-separated ref names here (for example tags/deployed/test).
+            # Encoding the whole tag turns '/' into '%2F', which can make existing refs look missing.
+            return "git/ref/tags/$TagName"
+          }
+
           function Get-TagRef {
             param(
               [Parameter(Mandatory)][string]$TagName,
               [switch]$AllowMissing
             )
 
-            $encodedTag = [Uri]::EscapeDataString($TagName)
             try {
-              return Invoke-RestMethod -Uri "$apiBase/git/ref/tags/$encodedTag" -Headers $headers
+              $relativePath = Get-GitTagRefRelativePath -TagName $TagName
+              return Invoke-RestMethod -Uri "$apiBase/$relativePath" -Headers $headers
             } catch {
               $status = $_.Exception.Response.StatusCode.value__
               if ($AllowMissing -and $status -eq 404) {
@@ -773,8 +789,8 @@ jobs:
           function Remove-TagRef {
             param([Parameter(Mandatory)][string]$TagName)
 
-            $encodedTag = [Uri]::EscapeDataString($TagName)
-            Invoke-RestMethod -Method DELETE -Uri "$apiBase/git/refs/tags/$encodedTag" -Headers $headers | Out-Null
+            $relativePath = "git/refs/tags/$TagName"
+            Invoke-RestMethod -Method DELETE -Uri "$apiBase/$relativePath" -Headers $headers | Out-Null
           }
 
           # Resolve the HEAD commit SHA of the originating BUILD run.
