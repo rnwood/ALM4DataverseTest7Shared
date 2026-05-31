@@ -618,26 +618,26 @@ function Get-DefaultSetupPromptGuidance {
     return @(switch ($PromptKind) {
         'Menu' {
             @(
-                'Choose the option that best matches what you want setup to do next.',
-                'If you are unsure, prefer the safer or more reviewable option and keep the current default where one is shown.'
+                'Choose the option that matches the outcome you want at this step.',
+                'When unsure, prefer the more reviewable path (for example pull request / keep existing) to reduce accidental changes.'
             )
         }
         'Text' {
             @(
-                'Enter the requested value and press Enter to continue.',
-                'If a default value is shown, you can accept it as-is or replace it with something more appropriate for your setup.'
+                'Enter the exact value this step needs, then continue.',
+                'Use the default only if it reflects your intended long-term naming or behavior.'
             )
         }
         'YesNo' {
             @(
-                'Confirm whether setup should continue with the action described below.',
-                'Choose No if you want to keep the current state unchanged and review the step again.'
+                'Choose Yes to apply the described action now, or No to keep the current state unchanged.',
+                'Use No when you want to review impacts before setup writes or reconfigures resources.'
             )
         }
         'Secret' {
             @(
-                'Enter the sensitive value requested for this step.',
-                'The input is hidden while you type, so paste carefully and verify you copied the right field from the source system.'
+                'Enter the requested sensitive value from the source system.',
+                'Input is hidden, so paste carefully and confirm you copied the secret value (not an ID or display name).'
             )
         }
     })
@@ -682,13 +682,23 @@ function Show-SetupPromptGuidance {
 function Get-SetupPromptInlineText {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)][ValidateSet('Text', 'YesNo', 'Secret')][string]$PromptKind
+        [Parameter(Mandatory)][ValidateSet('Text', 'YesNo', 'Secret')][string]$PromptKind,
+        [Parameter()][string]$PromptText
     )
 
+    $promptLabel = if ([string]::IsNullOrWhiteSpace($PromptText)) {
+        'Input'
+    }
+    else {
+        $PromptText.Trim()
+    }
+
+    $inlinePrefix = "[grey]$([string](ConvertTo-SpectreMarkupLiteral -Text $promptLabel)) >[/]"
+
     switch ($PromptKind) {
-        'Text' { return '[grey]>[/]' }
-        'YesNo' { return '[grey]>[/]' }
-        'Secret' { return '[grey]>[/]' }
+        'Text' { return $inlinePrefix }
+        'YesNo' { return $inlinePrefix }
+        'Secret' { return $inlinePrefix }
     }
 }
 
@@ -987,9 +997,13 @@ function Read-SecretText {
     Initialize-SpectreConsole
 
     while ($true) {
+        if ([string]::IsNullOrWhiteSpace($Prompt)) {
+            throw 'Read-SecretText received an empty prompt label. This would create an ambiguous input prompt.'
+        }
+
         Write-SetupPromptFrame -PromptKind 'Secret' -PromptText $Prompt -PromptGuidanceLines $PromptGuidanceLines -PromptGuidanceDocRelativePath $PromptGuidanceDocRelativePath -PromptGuidanceRef $PromptGuidanceRef -PromptGuidanceLinkLabel $PromptGuidanceLinkLabel
         Show-SetupStatusBarAtBottom -PromptKind 'Secret'
-        $textPrompt = [Spectre.Console.TextPrompt[string]]::new((Get-SetupPromptInlineText -PromptKind 'Secret'))
+        $textPrompt = [Spectre.Console.TextPrompt[string]]::new((Get-SetupPromptInlineText -PromptKind 'Secret' -PromptText $Prompt))
         $textPrompt.IsSecret = $true
         if ($AllowEmpty) {
             $textPrompt.AllowEmpty = $true
@@ -1016,13 +1030,23 @@ function Read-SecretText {
 }
 
 function Write-Section {
-    param([Parameter(Mandatory)][string]$Message)
+    param(
+        [Parameter(Mandatory)][string]$Message,
+        [Parameter()][string[]]$GuidanceLines,
+        [Parameter()][string]$GuidanceDocRelativePath,
+        [Parameter()][string]$GuidanceRef,
+        [Parameter()][string]$GuidanceLinkLabel = 'Click for docs'
+    )
 
     Initialize-SpectreConsole
     $script:SetupCurrentSectionMessage = $Message
     Clear-SetupPromptDocContext
     [Spectre.Console.AnsiConsole]::Clear()
     Write-SetupDashboard -Message $Message
+
+    if ($GuidanceLines -and @($GuidanceLines).Count -gt 0) {
+        Write-SetupGuidance -Lines @($GuidanceLines) -DocRelativePath $GuidanceDocRelativePath -Ref $GuidanceRef -LinkLabel $GuidanceLinkLabel -Header "$Message guidance" -SkipContextUpdate
+    }
 }
 
 function Select-FromMenu {
@@ -1177,10 +1201,14 @@ function Read-YesNo {
     )
 
     Initialize-SpectreConsole
+    if ([string]::IsNullOrWhiteSpace($Prompt)) {
+        throw 'Read-YesNo received an empty prompt label. This would create an ambiguous input prompt.'
+    }
+
     Write-SetupPromptFrame -PromptKind 'YesNo' -PromptText $Prompt -PromptGuidanceLines $PromptGuidanceLines -PromptGuidanceDocRelativePath $PromptGuidanceDocRelativePath -PromptGuidanceRef $PromptGuidanceRef -PromptGuidanceLinkLabel $PromptGuidanceLinkLabel
     Show-SetupStatusBarAtBottom -PromptKind 'YesNo'
     try {
-        return [Spectre.Console.AnsiConsole]::Confirm((Get-SetupPromptInlineText -PromptKind 'YesNo'), (-not $DefaultNo))
+        return [Spectre.Console.AnsiConsole]::Confirm((Get-SetupPromptInlineText -PromptKind 'YesNo' -PromptText $Prompt), (-not $DefaultNo))
     }
     finally {
         Clear-SetupStatusBarAtBottom
@@ -1324,7 +1352,7 @@ function Get-Alm4DataverseDocUrl {
 function Get-SetupGuidanceHeaderMarkup {
     [CmdletBinding()]
     param(
-        [Parameter()][string]$Header = 'What this step covers',
+        [Parameter(Mandatory)][string]$Header,
         [Parameter()][string]$DocUrl,
         [Parameter()][string]$LinkLabel = 'Click for docs'
     )
@@ -1380,7 +1408,7 @@ function Write-SetupGuidance {
         [Parameter()][string]$DocRelativePath,
         [Parameter()][string]$Ref,
         [Parameter()][string]$LinkLabel = 'Full docs',
-        [Parameter()][string]$Header = 'What this step covers',
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$Header,
         [Parameter()][switch]$SkipContextUpdate,
         [Parameter()][switch]$OmitTrailingSpacer
     )
@@ -1407,8 +1435,14 @@ function Write-SetupGuidance {
         return
     }
 
+    $effectiveHeader = $Header.Trim()
+
+    if ([string]::IsNullOrWhiteSpace($effectiveHeader)) {
+        throw 'Write-SetupGuidance requires a specific non-empty header.'
+    }
+
     $panelContentText = if ($contentLines.Count -gt 0) { $contentLines -join [Environment]::NewLine } else { '[grey][/]' }
-    $panelHeaderMarkup = Get-SetupGuidanceHeaderMarkup -Header $Header -DocUrl $docUrl -LinkLabel $LinkLabel
+    $panelHeaderMarkup = Get-SetupGuidanceHeaderMarkup -Header $effectiveHeader -DocUrl $docUrl -LinkLabel $LinkLabel
     $panelWriteStartTop = 0
     try {
         $panelWriteStartTop = [Console]::CursorTop
@@ -1446,12 +1480,16 @@ function Read-TextWithDefault {
     Initialize-SpectreConsole
 
     while ($true) {
+        if ([string]::IsNullOrWhiteSpace($Prompt)) {
+            throw 'Read-TextWithDefault received an empty prompt label. This would create an ambiguous input prompt.'
+        }
+
         $value = $null
         Write-SetupPromptFrame -PromptKind 'Text' -PromptText $Prompt -PromptGuidanceLines $PromptGuidanceLines -PromptGuidanceDocRelativePath $PromptGuidanceDocRelativePath -PromptGuidanceRef $PromptGuidanceRef -PromptGuidanceLinkLabel $PromptGuidanceLinkLabel
         if (-not [string]::IsNullOrWhiteSpace($DefaultValue)) {
             Show-SetupStatusBarAtBottom -PromptKind 'Text'
             try {
-                $value = [Spectre.Console.AnsiConsole]::Ask[string]((Get-SetupPromptInlineText -PromptKind 'Text'), $DefaultValue)
+                $value = [Spectre.Console.AnsiConsole]::Ask[string]((Get-SetupPromptInlineText -PromptKind 'Text' -PromptText $Prompt), $DefaultValue)
             }
             finally {
                 Clear-SetupStatusBarAtBottom
@@ -1459,7 +1497,7 @@ function Read-TextWithDefault {
         }
         else {
             Show-SetupStatusBarAtBottom -PromptKind 'Text'
-            $textPrompt = [Spectre.Console.TextPrompt[string]]::new((Get-SetupPromptInlineText -PromptKind 'Text'))
+            $textPrompt = [Spectre.Console.TextPrompt[string]]::new((Get-SetupPromptInlineText -PromptKind 'Text' -PromptText $Prompt))
             if ($AllowEmpty) {
                 $textPrompt.AllowEmpty = $true
             }
@@ -1524,13 +1562,13 @@ function Get-RepoChangePublishPlan {
     )
 
     $defaultGuidance = @(
-        "Choose how the generated pipeline/workflow/config changes should be published to '$RepositoryName'.",
-        "Direct commit is fastest when you want the automation live immediately on the chosen branch.",
-        "Branch + pull request is the safer option when branch protection, mandatory reviews, or change-control checks apply."
+        "Choose how setup should publish generated updates to '$RepositoryName'.",
+        "Direct commit applies changes immediately and is best when fast activation matters more than review.",
+        "Branch + pull request adds review/check gates and is best when governance or branch protection is required."
     )
 
     Write-Host ""
-    Write-SetupGuidance -Lines @($defaultGuidance + @($GuidanceLines)) -DocRelativePath $DocRelativePath -Ref $Ref
+    Write-SetupGuidance -Lines @($defaultGuidance + @($GuidanceLines)) -DocRelativePath $DocRelativePath -Ref $Ref -Header 'Repository publication guidance'
 
     $menuItems = @(
         "Commit directly to '$BaseBranch'",
@@ -1538,7 +1576,15 @@ function Get-RepoChangePublishPlan {
         "Push a branch and open a pull request into '$BaseBranch'"
     )
 
-    $selection = Select-FromMenu -Title "How should the $ProviderName repository changes be published?" -Items $menuItems
+    $selection = Select-FromMenu `
+        -Title "How should the $ProviderName repository changes be published?" `
+        -Items $menuItems `
+        -PromptGuidanceLines @(
+            "Choose whether to apply $ProviderName repository changes directly or through a pull request.",
+            "Use direct commit for immediate activation, or branch + PR when review/approval is required."
+        ) `
+        -PromptGuidanceDocRelativePath $DocRelativePath `
+        -PromptGuidanceRef $Ref
     if ($null -eq $selection) {
         throw "No repository publish option selected."
     }
@@ -1597,20 +1643,28 @@ function Get-BranchTargetedRepoChangePublishPlan {
     )
 
     $defaultGuidance = @(
-        "Choose how the generated branch-specific changes should be published for '$TargetBranch' in '$RepositoryName'.",
-        "Direct commit is fastest when you want the automation active on '$TargetBranch' immediately.",
-        "Branch + pull request is the safer option when reviews or branch protection apply before '$TargetBranch' should change."
+        "Choose how setup should publish branch-specific updates for '$TargetBranch' in '$RepositoryName'.",
+        "Direct commit updates '$TargetBranch' immediately and is best when instant activation is intended.",
+        "Branch + pull request adds review/check gates and is best when '$TargetBranch' must be controlled before changes land."
     )
 
     Write-Host ""
-    Write-SetupGuidance -Lines @($defaultGuidance + @($GuidanceLines)) -DocRelativePath $DocRelativePath -Ref $Ref
+    Write-SetupGuidance -Lines @($defaultGuidance + @($GuidanceLines)) -DocRelativePath $DocRelativePath -Ref $Ref -Header 'Branch publication guidance'
 
     $menuItems = @(
         "Commit directly to '$TargetBranch'",
         "Push a branch and open a pull request into '$TargetBranch'"
     )
 
-    $selection = Select-FromMenu -Title "How should the $ProviderName changes for branch '$TargetBranch' be published?" -Items $menuItems
+    $selection = Select-FromMenu `
+        -Title "How should the $ProviderName changes for branch '$TargetBranch' be published?" `
+        -Items $menuItems `
+        -PromptGuidanceLines @(
+            "Choose whether branch '$TargetBranch' updates should be applied directly or via a pull request.",
+            "Use direct commit for immediate branch updates, or branch + PR when checks and review gates are needed."
+        ) `
+        -PromptGuidanceDocRelativePath $DocRelativePath `
+        -PromptGuidanceRef $Ref
     if ($null -eq $selection) {
         throw "No repository publish option selected for branch '$TargetBranch'."
     }
@@ -1727,11 +1781,17 @@ function Select-OrderedSolutions {
     }
 
     while ($true) {
-        Write-Section 'Configure solution order'
+        Write-Section `
+            -Message 'Configure solution order' `
+            -GuidanceLines @(
+                'Build the ordered solution list that should be stored in source control.',
+                'Keep dependency order accurate because pipelines use this sequence during import/export operations.'
+            ) `
+            -GuidanceDocRelativePath 'docs/config/alm-config.md'
         Write-SetupGuidance -Lines @(
             'Use this menu to build the ordered list of unmanaged Dataverse solutions that should be kept in source control.',
             'The order matters because setup writes it into `alm-config.psd1` and later automation uses that sequence.'
-        ) -DocRelativePath 'docs/config/alm-config.md'
+        ) -DocRelativePath 'docs/config/alm-config.md' -Header 'Solution list guidance'
 
         if ($selectedSolutions.Count -eq 0) {
             [Spectre.Console.AnsiConsole]::MarkupLine('[grey]No solutions selected yet.[/]')
@@ -1940,20 +2000,21 @@ function Select-ConfiguredDeploymentEnvironments {
     }
 
     while ($true) {
-        Write-Section $Heading
-
-        $guidanceShown = $false
-        if ($GuidanceLines -or $DocRelativePath) {
-            Write-SetupGuidance -Lines $GuidanceLines -DocRelativePath $DocRelativePath -Ref $Ref
-            $guidanceShown = $true
+        $effectiveGuidanceLines = if ($GuidanceLines -and @($GuidanceLines).Count -gt 0) {
+            @($GuidanceLines)
         }
-
-        if (-not $guidanceShown) {
-            Write-SetupGuidance -Lines @(
-                'Use this menu to add, edit, or remove the Dataverse environments that form your deployment path.',
-                'Keep the short names stable and the list in promotion order, because that order becomes the generated stage chain.'
+        else {
+            @(
+                'Use this step to define which environments each branch deploys to and in what order.',
+                'Short names become stage labels and list order becomes promotion order, so keep both stable and intentional.'
             )
         }
+
+        Write-Section `
+            -Message $Heading `
+            -GuidanceLines $effectiveGuidanceLines `
+            -GuidanceDocRelativePath $DocRelativePath `
+            -GuidanceRef $Ref
 
         Show-EnvironmentConfigurationTable -EnvironmentConfigurations $selectedEnvironments
         [Spectre.Console.AnsiConsole]::WriteLine()
@@ -2142,9 +2203,34 @@ function Show-BranchEnvironmentMappingTable {
         return
     }
 
-    $table = New-SpectreTable -Columns @('Branch', 'Environment count', 'Environments')
+    $table = New-SpectreTable -Columns @('Branch', 'DEV environment', 'Deployment environments')
     foreach ($mapping in $items) {
         $branchName = [string]$mapping.BranchName
+        $devEnvironmentLabel = '<none>'
+
+        $devEnvironment = $null
+        if ($mapping.PSObject.Properties.Name -contains 'DevEnvironmentConfiguration' -and $mapping.DevEnvironmentConfiguration) {
+            $devEnvironment = $mapping.DevEnvironmentConfiguration
+        }
+        elseif ($mapping.PSObject.Properties.Name -contains 'ExistingDevEnvironment' -and $mapping.ExistingDevEnvironment) {
+            $devEnvironment = $mapping.ExistingDevEnvironment
+        }
+
+        if ($devEnvironment) {
+            if ($devEnvironment.PSObject.Properties.Name -contains 'ShortName' -and -not [string]::IsNullOrWhiteSpace([string]$devEnvironment.ShortName)) {
+                $devEnvironmentLabel = [string]$devEnvironment.ShortName
+            }
+            elseif ($devEnvironment.PSObject.Properties.Name -contains 'FriendlyName' -and -not [string]::IsNullOrWhiteSpace([string]$devEnvironment.FriendlyName)) {
+                $devEnvironmentLabel = [string]$devEnvironment.FriendlyName
+            }
+            elseif ($devEnvironment.PSObject.Properties.Name -contains 'Name' -and -not [string]::IsNullOrWhiteSpace([string]$devEnvironment.Name)) {
+                $devEnvironmentLabel = [string]$devEnvironment.Name
+            }
+            elseif ($devEnvironment.PSObject.Properties.Name -contains 'Url' -and -not [string]::IsNullOrWhiteSpace([string]$devEnvironment.Url)) {
+                $devEnvironmentLabel = [string]$devEnvironment.Url
+            }
+        }
+
         $environments = @($mapping.Environments)
         $environmentNames = @($environments | ForEach-Object {
             if ($null -eq $_) { return $null }
@@ -2156,7 +2242,7 @@ function Show-BranchEnvironmentMappingTable {
 
         Add-SpectreTableRow -Table $table -Cells @(
             $branchName,
-            [string]$environments.Count,
+            $devEnvironmentLabel,
             $(if ($environmentNames.Count -gt 0) { $environmentNames -join ', ' } else { '<none>' })
         )
     }
@@ -2173,7 +2259,9 @@ function Select-BranchEnvironmentMappings {
         [Parameter()][string[]]$GuidanceLines,
         [Parameter()][string]$DocRelativePath,
         [Parameter()][string]$Ref,
-        [Parameter()][switch]$BranchOnly
+        [Parameter()][switch]$BranchOnly,
+        [Parameter()][scriptblock]$EditDevEnvironmentScriptBlock,
+        [Parameter()][scriptblock]$EditDeploymentEnvironmentsScriptBlock
     )
 
     $allEnvironments = @($EnvironmentConfigurations | Where-Object { $null -ne $_ })
@@ -2184,23 +2272,83 @@ function Select-BranchEnvironmentMappings {
         }
 
         $branchMappings += [pscustomobject]@{
-            BranchName   = [string]$mapping.BranchName
-            Environments = @($mapping.Environments | Where-Object { $null -ne $_ })
+            BranchName                  = [string]$mapping.BranchName
+            DevEnvironmentConfiguration = $(if ($mapping.PSObject.Properties.Name -contains 'DevEnvironmentConfiguration') { $mapping.DevEnvironmentConfiguration } else { $null })
+            ExistingDevEnvironment      = $(if ($mapping.PSObject.Properties.Name -contains 'ExistingDevEnvironment') { $mapping.ExistingDevEnvironment } else { $null })
+            Environments                = @($mapping.Environments | Where-Object { $null -ne $_ })
+        }
+    }
+
+    $isNewRepositoryBootstrapState = (
+        $branchMappings.Count -eq 1 -and
+        ([string]$branchMappings[0].BranchName -ieq 'main') -and
+        ($null -eq $branchMappings[0].DevEnvironmentConfiguration) -and
+        ($null -eq $branchMappings[0].ExistingDevEnvironment) -and
+        (@($branchMappings[0].Environments).Count -eq 0)
+    )
+
+    if ($isNewRepositoryBootstrapState) {
+        $strategyItems = @(
+            'main only (recommended simple option)',
+            'main + develop (required for environments that enforce PRs)'
+        )
+
+        $strategySelection = Select-FromMenu `
+            -Title 'Choose a branching strategy for this repository' `
+            -Items $strategyItems `
+            -PromptGuidanceLines @(
+                'main only is the simplest setup and works well when deployments can be committed directly to main.',
+                'main + develop is better when environments or branch policies enforce pull requests before updates reach main.'
+            ) `
+            -PromptGuidanceDocRelativePath $DocRelativePath `
+            -PromptGuidanceRef $Ref
+
+        if ($null -eq $strategySelection) {
+            return @($branchMappings)
+        }
+
+        if ($strategySelection -eq 1) {
+            $branchMappings = @(
+                [pscustomobject]@{
+                    BranchName                  = 'main'
+                    DevEnvironmentConfiguration = $null
+                    ExistingDevEnvironment      = $null
+                    Environments                = @()
+                },
+                [pscustomobject]@{
+                    BranchName                  = 'develop'
+                    DevEnvironmentConfiguration = $null
+                    ExistingDevEnvironment      = $null
+                    Environments                = @()
+                }
+            )
+        }
+
+        for ($bootstrapIndex = 0; $bootstrapIndex -lt $branchMappings.Count; $bootstrapIndex++) {
+            $bootstrapMapping = $branchMappings[$bootstrapIndex]
+
+            if ($EditDevEnvironmentScriptBlock) {
+                $bootstrapMapping.DevEnvironmentConfiguration = & $EditDevEnvironmentScriptBlock @($branchMappings) $bootstrapMapping
+                $branchMappings[$bootstrapIndex] = $bootstrapMapping
+            }
+
+            if ($EditDeploymentEnvironmentsScriptBlock) {
+                $updatedDeploymentEnvironments = @(& $EditDeploymentEnvironmentsScriptBlock @($branchMappings) $bootstrapMapping)
+                $bootstrapMapping.Environments = @($updatedDeploymentEnvironments | Where-Object { $null -ne $_ })
+                $branchMappings[$bootstrapIndex] = $bootstrapMapping
+            }
         }
     }
 
     while ($true) {
-        Write-Section 'Configure deployment branch mappings'
-
-        if ($GuidanceLines -or $DocRelativePath) {
-            Write-SetupGuidance -Lines $GuidanceLines -DocRelativePath $DocRelativePath -Ref $Ref
-        }
-        else {
-            Write-SetupGuidance -Lines @(
-                'Use this screen to add, edit, or remove deployment branches and choose which environments each branch deploys to.',
-                'Each environment can only be assigned to one branch to keep promotion paths explicit and avoid accidental overlap.'
-            )
-        }
+        Write-Section `
+            -Message 'Configure deployment branch mappings' `
+            -GuidanceLines @(
+                'Define which branches setup manages, and map each branch to DEV and deployment targets.',
+                'These mappings control generated pipelines/workflows, so clear ownership prevents ambiguous promotion paths.'
+            ) `
+            -GuidanceDocRelativePath 'docs/setup/github-setup.md' `
+            -GuidanceRef $Ref
 
         Show-BranchEnvironmentMappingTable -BranchMappings $branchMappings
         [Spectre.Console.AnsiConsole]::WriteLine()
@@ -2232,9 +2380,25 @@ function Select-BranchEnvironmentMappings {
                     continue
                 }
 
-                $branchMappings += [pscustomobject]@{
-                    BranchName   = $branchName
-                    Environments = @()
+                $newBranchMapping = [pscustomobject]@{
+                    BranchName                  = $branchName
+                    DevEnvironmentConfiguration = $null
+                    ExistingDevEnvironment      = $null
+                    Environments                = @()
+                }
+
+                $branchMappings += $newBranchMapping
+                $newBranchIndex = $branchMappings.Count - 1
+
+                if ($EditDevEnvironmentScriptBlock) {
+                    $newBranchMapping.DevEnvironmentConfiguration = & $EditDevEnvironmentScriptBlock @($branchMappings) $newBranchMapping
+                    $branchMappings[$newBranchIndex] = $newBranchMapping
+                }
+
+                if ($EditDeploymentEnvironmentsScriptBlock) {
+                    $updatedDeploymentEnvironments = @(& $EditDeploymentEnvironmentsScriptBlock @($branchMappings) $newBranchMapping)
+                    $newBranchMapping.Environments = @($updatedDeploymentEnvironments | Where-Object { $null -ne $_ })
+                    $branchMappings[$newBranchIndex] = $newBranchMapping
                 }
             }
             'Remove a branch mapping' {
@@ -2260,7 +2424,15 @@ function Select-BranchEnvironmentMappings {
                 }
 
                 $currentMapping = $branchMappings[$editIndex]
+                $exitEditMenu = $false
                 $mappingMenuItems = @('Rename branch')
+                if ($EditDevEnvironmentScriptBlock) {
+                    $mappingMenuItems += 'Edit DEV environment'
+                }
+                if ($EditDeploymentEnvironmentsScriptBlock) {
+                    $mappingMenuItems += 'Edit deployment environments'
+                    $mappingMenuItems += 'Clear all deployment environments'
+                }
                 if (-not $BranchOnly) {
                     $mappingMenuItems += 'Assign environments'
                     $mappingMenuItems += 'Clear all assigned environments'
@@ -2300,6 +2472,19 @@ function Select-BranchEnvironmentMappings {
                             }
 
                             $currentMapping.BranchName = $newBranchName
+                            $branchMappings[$editIndex] = $currentMapping
+                        }
+                        'Edit DEV environment' {
+                            $currentMapping.DevEnvironmentConfiguration = & $EditDevEnvironmentScriptBlock @($branchMappings) $currentMapping
+                            $branchMappings[$editIndex] = $currentMapping
+                        }
+                        'Edit deployment environments' {
+                            $updatedDeploymentEnvironments = @(& $EditDeploymentEnvironmentsScriptBlock @($branchMappings) $currentMapping)
+                            $currentMapping.Environments = @($updatedDeploymentEnvironments | Where-Object { $null -ne $_ })
+                            $branchMappings[$editIndex] = $currentMapping
+                        }
+                        'Clear all deployment environments' {
+                            $currentMapping.Environments = @()
                             $branchMappings[$editIndex] = $currentMapping
                         }
                         'Assign environments' {
@@ -2394,8 +2579,12 @@ function Select-BranchEnvironmentMappings {
                             $branchMappings[$editIndex] = $currentMapping
                         }
                         'Done' {
-                            break
+                            $exitEditMenu = $true
                         }
+                    }
+
+                    if ($exitEditMenu) {
+                        break
                     }
                 }
             }

@@ -115,7 +115,14 @@ function Install-PortableGit {
 }
 
 Set-SetupPhaseContext -PhaseNames $script:setupPhaseNames -CurrentPhaseIndex 0
-Write-Section "Initialising setup"
+Write-Section `
+    -Message "Initialising setup" `
+    -GuidanceLines @(
+        'Load prerequisites and initialize Azure DevOps setup helpers before authentication starts.',
+        'Address any early warnings now to avoid downstream setup failures.'
+    ) `
+    -GuidanceDocRelativePath 'README.md' `
+    -GuidanceRef $ALM4DataverseRef
 
 $TempModuleRoot = Join-Path ([System.IO.Path]::GetTempPath()) "ALM4Dataverse\Modules"
 New-DirectoryIfMissing -Path $TempModuleRoot
@@ -200,7 +207,14 @@ if ($resolveDevRefAfterGitIsAvailable) {
 }
 
 Set-SetupPhaseContext -PhaseNames $script:setupPhaseNames -CurrentPhaseIndex 0
-Write-Section "Authenticating"
+Write-Section `
+    -Message "Authenticating" `
+    -GuidanceLines @(
+        'Authenticate to Azure DevOps and Azure with an account that can administer project resources.',
+        'This identity must be able to create pipelines, service connections, and Dataverse users.'
+    ) `
+    -GuidanceDocRelativePath 'docs/setup/azdo-automated-setup.md' `
+    -GuidanceRef $ALM4DataverseRef
 
 Write-Host "To enable automated setup setup, we need to authenticate with the necessary services." -ForegroundColor Green
 Write-Host ""
@@ -220,7 +234,15 @@ if ($cachedAzureAccounts.Count -gt 0) {
     $azureAuthMenuItems = @($cachedAzureAccounts | ForEach-Object { "Use existing Azure login: $_" })
     $azureAuthMenuItems += "Sign in with a different Azure account"
 
-    $azureAuthChoice = Select-FromMenu -Title "Azure authentication" -Items $azureAuthMenuItems
+    $azureAuthChoice = Select-FromMenu `
+        -Title "Azure authentication" `
+        -Items $azureAuthMenuItems `
+        -PromptGuidanceLines @(
+            'Choose whether to reuse an existing Azure login context or authenticate with a different identity.',
+            'Use an identity with permissions to administer Azure DevOps resources and Dataverse setup prerequisites.'
+        ) `
+        -PromptGuidanceDocRelativePath 'docs/setup/azdo-automated-setup.md' `
+        -PromptGuidanceRef $ALM4DataverseRef
     if ($null -eq $azureAuthChoice) {
         throw "No Azure authentication option selected."
     }
@@ -290,7 +312,14 @@ function New-AzDoProject {
         throw "Project name cannot be empty."
     }
 
-    Write-Section "Creating new Azure DevOps project"
+    Write-Section `
+        -Message "Creating new Azure DevOps project" `
+        -GuidanceLines @(
+            'Provision a new project when no existing project should host this ALM setup.',
+            'Project-level permissions and pipeline artifacts are configured immediately afterward.'
+        ) `
+        -GuidanceDocRelativePath 'docs/setup/azdo-automated-setup.md' `
+        -GuidanceRef $ALM4DataverseRef
     Write-Host "Project: $ProjectName" -ForegroundColor Cyan
 
     $processes = @(Invoke-WithSpectreStatus -Status 'Retrieving Azure DevOps process templates...' -ScriptBlock {
@@ -513,7 +542,14 @@ function Get-AzDoSharedRepositorySyncState {
 }
 
 Set-SetupPhaseContext -PhaseNames $script:setupPhaseNames -CurrentPhaseIndex 1
-Write-Section "Select Azure DevOps organization"
+Write-Section `
+    -Message "Select Azure DevOps organization" `
+    -GuidanceLines @(
+        'Choose the organization that will own repositories, pipelines, and environment assets.',
+        'Ensure your account has adequate permissions in the selected organization.'
+    ) `
+    -GuidanceDocRelativePath 'docs/setup/azdo-organisation-requirements.md' `
+    -GuidanceRef $ALM4DataverseRef
 
 # Use direct REST API to get organizations (VSTeam requires an org to connect to first)
 $orgData = Invoke-WithErrorHandling -OperationName "Discovering Azure DevOps Organizations" -ScriptBlock {
@@ -624,7 +660,15 @@ $orgLabels = $orgData.OrgLabels
 Write-SetupDebug -Message "Organization menu labels: $($orgLabels -join ' | ')"
 
 $orgIndex = 0
-$orgIndex = Select-FromMenu -Title "Select an Azure DevOps organization" -Items $orgLabels
+$orgIndex = Select-FromMenu `
+    -Title "Select an Azure DevOps organization" `
+    -Items $orgLabels `
+    -PromptGuidanceLines @(
+        'Choose the Azure DevOps organization that owns the project, repositories, and pipelines for this setup.',
+        'Select the organization where you have enough permissions to create and configure project resources.'
+    ) `
+    -PromptGuidanceDocRelativePath 'docs/setup/azdo-organisation-requirements.md' `
+    -PromptGuidanceRef $ALM4DataverseRef
 if ($null -eq $orgIndex) {
     Write-Host "No organization selected." -ForegroundColor Yellow
     return
@@ -646,12 +690,19 @@ function Initialize-AzDoProjectAndRepositories {
     [CmdletBinding()]
     param()
 
-    Write-Section "Select target Azure DevOps Project"
+    Write-Section `
+        -Message "Select target Azure DevOps Project" `
+        -GuidanceLines @(
+            'Pick the project where ALM repositories and pipeline definitions should be created.',
+            'Choose the project lifecycle boundary that matches your delivery model.'
+        ) `
+        -GuidanceDocRelativePath 'docs/setup/azdo-automated-setup.md' `
+        -GuidanceRef $ALM4DataverseRef
 
     Write-SetupGuidance -Lines @(
         "Choose the long-lived Azure DevOps project that will host your repos, pipelines, service connections, and approvals.",
         "Best practice: avoid phase-specific project names so you do not paint future-you into a corner."
-    ) -DocRelativePath 'docs/setup/azdo-automated-setup.md' -Ref $ALM4DataverseRef
+    ) -DocRelativePath 'docs/setup/azdo-automated-setup.md' -Ref $ALM4DataverseRef -Header 'Project selection guidance'
 
     $azDevOpsAccessToken = $adoAccessToken.Token
 
@@ -664,7 +715,15 @@ function Initialize-AzDoProjectAndRepositories {
     }
 
     $menuItems = $projectNames + @('Create a new project')
-    $index = Select-FromMenu -Title "Select the target Azure DevOps project" -Items $menuItems
+    $index = Select-FromMenu `
+        -Title "Select the target Azure DevOps project" `
+        -Items $menuItems `
+        -PromptGuidanceLines @(
+            'Choose the project that should host repositories, pipeline definitions, service connections, and variable groups.',
+            'Use Create a new project only when no existing project should own this ALM setup.'
+        ) `
+        -PromptGuidanceDocRelativePath 'docs/setup/azdo-automated-setup.md' `
+        -PromptGuidanceRef $ALM4DataverseRef
 
     if ($null -eq $index) {
         Write-Host "No project selected." -ForegroundColor Yellow
@@ -715,12 +774,19 @@ function Initialize-AzDoProjectAndRepositories {
     $mainRepoWorkingTree = New-AzDoRepoWorkingTree -TargetRepo $mainRepo -AccessToken $azDevOpsAccessToken -PreferredBranch 'main'
     $mainRepoWorkingRoot = $mainRepoWorkingTree.Path
 
-    Write-Section "Ensuring Needed Extensions are Enabled"
+    Write-Section `
+        -Message "Ensuring Needed Extensions are Enabled" `
+        -GuidanceLines @(
+            'Verify required Azure DevOps extensions and capabilities for generated pipeline YAML.',
+            'Keep extension availability consistent across projects using this setup process.'
+        ) `
+        -GuidanceDocRelativePath 'docs/setup/azdo-manual-setup.md' `
+        -GuidanceRef $ALM4DataverseRef
 
     Write-SetupGuidance -Lines @(
         "ALM4Dataverse extension mode enables Workload Identity Federation and the ALM4Dataverse Set Connection Variables task.",
         "Disable it only if you specifically want the Power Platform Build Tools secret-based fallback path."
-    ) -DocRelativePath 'docs/config/azdo-environment-service-connection.md' -Ref $ALM4DataverseRef
+    ) -DocRelativePath 'docs/config/azdo-environment-service-connection.md' -Ref $ALM4DataverseRef -Header 'Extension mode guidance'
 
     $existingExtensionMode = Get-AzDoExtensionModeFromWorkingTree -RepoRoot $mainRepoWorkingRoot -Branch $script:mainRepoBranch
     if ($existingExtensionMode.IsConfigured -and -not $existingExtensionMode.HasConflict) {
@@ -797,7 +863,14 @@ function Initialize-AzDoProjectAndRepositories {
         Write-Host "Existing shared repository detected from pipeline YAML: $existingSharedRepoName" -ForegroundColor DarkGray
     }
 
-    Write-Section "Selecting shared Git repository"
+    Write-Section `
+        -Message "Selecting shared Git repository" `
+        -GuidanceLines @(
+            'Choose the shared repository that stores reusable pipeline templates.',
+            'Pipelines in the main repository reference this shared source during execution.'
+        ) `
+        -GuidanceDocRelativePath 'docs/setup/azdo-automated-setup.md' `
+        -GuidanceRef $ALM4DataverseRef
 
     $repo = Select-AzDoSharedRepository -ProjectName $selectedProject.Name -PreferredRepositoryName $existingSharedRepoName -ExcludeRepositoryName $mainRepo.Name
     $sharedRepoName = $repo.Name
@@ -809,7 +882,14 @@ function Initialize-AzDoProjectAndRepositories {
         throw "This script must be run in an interactive PowerShell session."
     }
 
-    Write-Section "Creating/updating shared repository '$sharedRepoName'"
+    Write-Section `
+        -Message "Creating/updating shared repository '$sharedRepoName'" `
+        -GuidanceLines @(
+            "Synchronize required template files in shared repository '$sharedRepoName'.",
+            'This step keeps downstream template references stable for all generated pipelines.'
+        ) `
+        -GuidanceDocRelativePath 'docs/setup/azdo-automated-setup.md' `
+        -GuidanceRef $ALM4DataverseRef
 
     $hasCommits = Test-AzDoGitRepositoryHasCommits -Organization $orgName -Project $selectedProject.Name -RepositoryId $repo.Id
     $justInitialized = $false
@@ -921,7 +1001,15 @@ function Initialize-AzDoProjectAndRepositories {
                             "Reset '$sharedRepoName' to ref '$ALM4DataverseRef' (force push)",
                             "Leave '$sharedRepoName' unchanged"
                         )
-                        $divergedSelection = Select-FromMenu -Title "The shared repo '$sharedRepoName' has diverged. Choose how to update it." -Items $divergedMenuItems
+                        $divergedSelection = Select-FromMenu `
+                            -Title "The shared repo '$sharedRepoName' has diverged. Choose how to update it." `
+                            -Items $divergedMenuItems `
+                            -PromptGuidanceLines @(
+                                "Choose how to reconcile '$sharedRepoName' with upstream ALM4Dataverse template history.",
+                                'Rebase preserves local commits, reset force-aligns to upstream, and leave unchanged keeps current state.'
+                            ) `
+                            -PromptGuidanceDocRelativePath 'docs/setup/azdo-automated-setup.md' `
+                            -PromptGuidanceRef $ALM4DataverseRef
 
                         switch ($divergedSelection) {
                             0 {
@@ -1025,7 +1113,10 @@ function Select-DataverseEnvironment {
     param(
         [Parameter()][string]$Prompt = "Select a Dataverse environment",
         [Parameter()][string]$ExcludeUrl,
-        [Parameter()][string]$PreferredUrl
+        [Parameter()][string]$PreferredUrl,
+        [Parameter()][string[]]$PromptGuidanceLines,
+        [Parameter()][string]$PromptGuidanceDocRelativePath,
+        [Parameter()][string]$PromptGuidanceRef
     )
 
     $environments = @(Get-DataverseEnvironmentCatalog -ShowStatus)
@@ -1068,12 +1159,43 @@ function Select-DataverseEnvironment {
     }
 
     # Show menu
-    $selectedIndex = Select-FromMenu -Title $Prompt -Items $menuItems
+    $selectedIndex = Select-FromMenu `
+        -Title $Prompt `
+        -Items $menuItems `
+        -PromptGuidanceLines $PromptGuidanceLines `
+        -PromptGuidanceDocRelativePath $PromptGuidanceDocRelativePath `
+        -PromptGuidanceRef $PromptGuidanceRef
     if ($null -eq $selectedIndex) {
         return $null
     }
 
     return $menuActions[$selectedIndex]
+}
+
+function Get-OptionalObjectPropertyValue {
+    [CmdletBinding()]
+    param(
+        [Parameter()][object]$InputObject,
+        [Parameter(Mandatory)][string]$PropertyName
+    )
+
+    if ($null -eq $InputObject) {
+        return $null
+    }
+
+    if ($InputObject -is [hashtable]) {
+        if ($InputObject.ContainsKey($PropertyName)) {
+            return $InputObject[$PropertyName]
+        }
+
+        return $null
+    }
+
+    if ($InputObject.PSObject -and $InputObject.PSObject.Properties.Name -contains $PropertyName) {
+        return $InputObject.$PropertyName
+    }
+
+    return $null
 }
 
 #endregion
@@ -1087,7 +1209,14 @@ function Select-AzDoMainRepository {
         [Parameter()][string]$SharedRepositoryName
     )
 
-    Write-Section "Selecting main Git repository"
+    Write-Section `
+        -Message "Selecting main Git repository" `
+        -GuidanceLines @(
+            'Choose the primary repository where generated branch-aware pipeline YAML files are committed.',
+            'This repository becomes the operational ALM source for your project.'
+        ) `
+        -GuidanceDocRelativePath 'docs/setup/azdo-automated-setup.md' `
+        -GuidanceRef $ALM4DataverseRef
 
     $repos = @(Invoke-WithSpectreStatus -Status "Retrieving repositories in '$ProjectName'..." -ScriptBlock {
         Get-VSTeamGitRepository -ProjectName $ProjectName
@@ -1103,7 +1232,15 @@ function Select-AzDoMainRepository {
 
     Write-Host "Select the repository where you want to set up pipelines:" -ForegroundColor Green
 
-    $selectedIndex = Select-FromMenu -Title "Select the repo" -Items $menu
+    $selectedIndex = Select-FromMenu `
+        -Title "Select the repo" `
+        -Items $menu `
+        -PromptGuidanceLines @(
+            'Choose the primary application repository where ALM4Dataverse pipeline and config files should be generated.',
+            'Use Create a new repository when this project does not already have a target repo for ALM automation.'
+        ) `
+        -PromptGuidanceDocRelativePath 'docs/setup/azdo-automated-setup.md' `
+        -PromptGuidanceRef $ALM4DataverseRef
     if ($null -eq $selectedIndex) {
         throw "No main repository selected."
     }
@@ -1244,7 +1381,14 @@ function Select-AzDoSharedRepository {
         [Parameter()][string]$ExcludeRepositoryName
     )
 
-    Write-Section 'Selecting shared ALM4Dataverse repository'
+    Write-Section `
+        -Message 'Selecting shared ALM4Dataverse repository' `
+        -GuidanceLines @(
+            'Select the upstream ALM4Dataverse source and ref used for template synchronization.',
+            'Use a stable ref that matches the feature set you want in generated pipelines.'
+        ) `
+        -GuidanceDocRelativePath 'docs/setup/azdo-automated-setup.md' `
+        -GuidanceRef $ALM4DataverseRef
 
     $repos = @(Invoke-WithSpectreStatus -Status "Retrieving shared repository options in '$ProjectName'..." -ScriptBlock {
         Get-VSTeamGitRepository -ProjectName $ProjectName
@@ -1275,7 +1419,15 @@ function Select-AzDoSharedRepository {
     $menuItems += 'Create a new repository'
     $menuActions += @{ Type = 'CreateNew'; DefaultName = $defaultNewName }
 
-    $selection = Select-FromMenu -Title 'Select the shared repository that will host the ALM4Dataverse templates' -Items $menuItems
+    $selection = Select-FromMenu `
+        -Title 'Select the shared repository that will host the ALM4Dataverse templates' `
+        -Items $menuItems `
+        -PromptGuidanceLines @(
+            'Choose the shared repository that will store reusable ALM4Dataverse templates for this project.',
+            'Use the existing shared repository when one is already referenced by your main repo to keep template source consistent.'
+        ) `
+        -PromptGuidanceDocRelativePath 'docs/setup/azdo-automated-setup.md' `
+        -PromptGuidanceRef $ALM4DataverseRef
     if ($null -eq $selection) {
         throw 'No shared repository selected.'
     }
@@ -1322,7 +1474,14 @@ function Sync-CopyToYourRepoIntoGitRepo {
         throw "Source folder not found: $SourceRoot"
     }
 
-    Write-Section "Syncing pipeline files into main repository"
+    Write-Section `
+        -Message "Syncing pipeline files into main repository" `
+        -GuidanceLines @(
+            'Copy and update BUILD/EXPORT/IMPORT/DEPLOY YAML files in the selected main repository.',
+            'Branch-specific deploy definitions are generated from current mapping choices.'
+        ) `
+        -GuidanceDocRelativePath 'docs/setup/azdo-manual-setup.md' `
+        -GuidanceRef $ALM4DataverseRef
     Write-Host "Source: $SourceRoot" -ForegroundColor DarkGray
     Write-Host "Target: $TargetRoot" -ForegroundColor DarkGray
 
@@ -1830,7 +1989,14 @@ function Ensure-AzDoPipelinesForMainRepo {
         [Parameter()][string]$FolderPath = '\\'
     )
 
-    Write-Section "Ensuring Azure DevOps pipeline definitions exist"
+    Write-Section `
+        -Message "Ensuring Azure DevOps pipeline definitions exist" `
+        -GuidanceLines @(
+            'Create or update pipeline definitions that target the generated YAML files.',
+            'Definitions are required before service connections and environment authorizations can be applied.'
+        ) `
+        -GuidanceDocRelativePath 'docs/setup/azdo-automated-setup.md' `
+        -GuidanceRef $ALM4DataverseRef
 
     $queueId = Get-AzDoDefaultAgentQueueId -Organization $Organization -Project $Project
     Write-Host "Using agent queue id: $queueId" -ForegroundColor DarkGray
@@ -2509,7 +2675,7 @@ function Get-PowerPlatformSCCredentials {
     Write-SetupGuidance -Lines @(
         "Service Principal credentials are used to authenticate the pipeline to Dataverse.",
         "Best practice: use a separate App Registration per environment and prefer Workload Identity Federation when ALM4Dataverse extension mode stays enabled."
-    ) -DocRelativePath 'docs/config/azdo-environment-service-connection.md' -Ref $ALM4DataverseRef
+    ) -DocRelativePath 'docs/config/azdo-environment-service-connection.md' -Ref $ALM4DataverseRef -Header 'Service principal credential guidance'
     
     $selection = Select-FromMenu -Title "Select Service Principal credentials for '$EnvironmentName'" -Items $menuItems
     if ($null -eq $selection) { throw "No credential selected." }
@@ -2708,9 +2874,17 @@ function Get-DataverseServiceAccountUPN {
         "Service Account credentials are used for ownership and licensing of Cloud Flows.",
         "Use a licensed user account with System Administrator role.",
         "Best practice: keep this separate from your personal admin account so automation ownership stays stable."
-    ) -DocRelativePath 'docs/config/azdo-environment-service-connection.md' -Ref $ALM4DataverseRef
+    ) -DocRelativePath 'docs/config/azdo-environment-service-connection.md' -Ref $ALM4DataverseRef -Header 'Service account guidance'
     
-    $selection = Select-FromMenu -Title "Select Dataverse Service Account for '$EnvironmentName'" -Items $menuItems
+    $selection = Select-FromMenu `
+        -Title "Select Dataverse Service Account for '$EnvironmentName'" `
+        -Items $menuItems `
+        -PromptGuidanceLines @(
+            "Choose the service account UPN that will own flow activation and runtime ownership for '$EnvironmentName'.",
+            'Reusing an existing service account keeps ownership consistent across runs; entering a new one changes who owns activated processes.'
+        ) `
+        -PromptGuidanceDocRelativePath 'docs/config/azdo-environment-service-connection.md' `
+        -PromptGuidanceRef $ALM4DataverseRef
     if ($null -eq $selection) { throw "No service account selected." }
 
     $action = $menuActions[$selection]
@@ -2857,7 +3031,14 @@ $azDevOpsAccessToken = $initialization.AzDevOpsAccessToken
 $repo = $initialization.SharedRepo
 $sharedRepoName = $initialization.SharedRepoName
 
-Write-Section "Ensuring main repository contains pipeline YAMLs"
+Write-Section `
+    -Message "Ensuring main repository contains pipeline YAMLs" `
+    -GuidanceLines @(
+        'Verify required YAML files exist in the main repository before pipeline creation and publication.',
+        'Missing files at this stage block successful setup completion.'
+    ) `
+    -GuidanceDocRelativePath 'docs/setup/azdo-manual-setup.md' `
+    -GuidanceRef $ALM4DataverseRef
 
 $credentialsCache = @()
 $serviceAccountsCache = @()
@@ -2933,7 +3114,15 @@ function Get-DataverseSolutionsSelection {
         Write-Host ""
 
         # Select environment using the helper function
-        $selectedEnv = Select-DataverseEnvironment -Prompt "Select your DEV environment" -PreferredUrl $ExistingEnvironmentUrl
+        $selectedEnv = Select-DataverseEnvironment `
+            -Prompt "Select your DEV environment" `
+            -PreferredUrl $ExistingEnvironmentUrl `
+            -PromptGuidanceLines @(
+                'Choose the DEV Dataverse environment used to discover unmanaged solutions for alm-config.psd1.',
+                'Pick the environment that represents the source-controlled customization baseline.'
+            ) `
+            -PromptGuidanceDocRelativePath 'docs/config/alm-config.md' `
+            -PromptGuidanceRef $ALM4DataverseRef
         if (-not $selectedEnv) {
             throw "No environment selected."
         }
@@ -3298,6 +3487,10 @@ function Get-AzDoExistingEnvironmentState {
         }
     }
 
+    if ([string]::IsNullOrWhiteSpace($environmentUrl) -and -not $credentials -and [string]::IsNullOrWhiteSpace($serviceAccountUPN)) {
+        return $null
+    }
+
     return [pscustomobject]@{
         ShortName         = $EnvironmentName
         FriendlyName      = $friendlyName
@@ -3433,8 +3626,46 @@ function Get-AzDoRepositoryExistingSetupState {
         $existingDevEnvironment = Get-AzDoExistingEnvironmentState -ProjectName $ProjectName -EnvironmentName "Dev-$branchName" -TenantId $TenantId
         $matchingBranchMapping = $pipelineBranchMappings | Where-Object { $_.BranchName -ieq $branchName } | Select-Object -First 1
         $deploymentEnvironments = @()
+        $mappedEnvironmentNames = @()
 
-        foreach ($environmentName in @($matchingBranchMapping.EnvironmentNames)) {
+        if ($null -ne $matchingBranchMapping) {
+            $mappingPropertyNames = @($matchingBranchMapping.PSObject.Properties.Name)
+            if ($mappingPropertyNames -contains 'EnvironmentNames') {
+                $mappedEnvironmentNames = @($matchingBranchMapping.EnvironmentNames)
+            }
+            elseif ($mappingPropertyNames -contains 'Environments') {
+                $mappedEnvironmentNames = @($matchingBranchMapping.Environments)
+            }
+            elseif ($mappingPropertyNames -contains 'DeploymentEnvironments') {
+                $mappedEnvironmentNames = @($matchingBranchMapping.DeploymentEnvironments)
+            }
+        }
+
+        foreach ($mappedEnvironment in @($mappedEnvironmentNames)) {
+            if ($null -eq $mappedEnvironment) {
+                continue
+            }
+
+            $environmentName = $null
+            if ($mappedEnvironment -is [string]) {
+                $environmentName = [string]$mappedEnvironment
+            }
+            else {
+                $mappedEnvironmentPropertyNames = @($mappedEnvironment.PSObject.Properties.Name)
+                if ($mappedEnvironmentPropertyNames -contains 'ShortName') {
+                    $environmentName = [string]$mappedEnvironment.ShortName
+                }
+                elseif ($mappedEnvironmentPropertyNames -contains 'EnvironmentName') {
+                    $environmentName = [string]$mappedEnvironment.EnvironmentName
+                }
+                elseif ($mappedEnvironmentPropertyNames -contains 'Name') {
+                    $environmentName = [string]$mappedEnvironment.Name
+                }
+                else {
+                    $environmentName = [string]$mappedEnvironment
+                }
+            }
+
             if ([string]::IsNullOrWhiteSpace($environmentName)) {
                 continue
             }
@@ -3494,11 +3725,13 @@ function New-AzDoBranchSetupState {
         [Parameter()][object]$PublishPlan
     )
 
+    $normalizedDeploymentEnvironments = @($DeploymentEnvironments | Where-Object { $null -ne $_ })
+
     return [pscustomobject]@{
         BranchName                  = $BranchName
         ExistingDevEnvironment      = $ExistingDevEnvironment
         DevEnvironmentConfiguration = $null
-        DeploymentEnvironments      = @($DeploymentEnvironments | Where-Object { $null -ne $_ })
+        DeploymentEnvironments      = $normalizedDeploymentEnvironments
         PublishPlan                 = $PublishPlan
     }
 }
@@ -3605,14 +3838,16 @@ function Get-DataverseEnvironmentsSelection {
         }
     }
 
+    $resolvedHeading = if ([string]::IsNullOrWhiteSpace($Branch)) { 'Target Deployment Environments' } else { "Target Deployment Environments for branch '$Branch'" }
+
     $selectedEnvironments = @(Select-ConfiguredDeploymentEnvironments `
         -InitialEnvironments $selectedEnvironments `
-        -Heading 'Target Deployment Environments' `
+        -Heading $resolvedHeading `
         -Title 'Manage deployment environments' `
         -GuidanceLines @(
-            'Add each deployment environment together with the service principal choice and the Dataverse service account that should own automation in that environment.',
-            'The summary table lets you review environment URLs, authentication choices, and service-account ownership together before the script updates DEPLOY YAML and Azure DevOps resources.',
-            'Best practice: keep the short names stable and in promotion order because that order becomes the generated deployment stage sequence.'
+            'Select each deployment environment together with the credential and service-account ownership that should be used there.',
+            'Review URL, auth, and service-account values before continuing because setup applies them to service connections, variable groups, and DEPLOY YAML.',
+            'Keep short names stable and the list in promotion order, because that order becomes the generated deployment stage sequence.'
         ) `
         -DocRelativePath 'docs/setup/azdo-manual-setup.md' `
         -Ref $ALM4DataverseRef `
@@ -4017,6 +4252,9 @@ function Publish-AzDoBranchSetupChanges {
             $seedRef = $ConfiguredBranch
         }
 
+        & git rev-parse --verify HEAD 2>&1 | Out-Null
+        $hasLocalHeadCommit = ($LASTEXITCODE -eq 0)
+
         if ($PublishPlan.Mode -eq 'PullRequest') {
             $workingBaseRef = if ($targetBranchExistsOnOrigin) { "origin/$ConfiguredBranch" } elseif ($seedRef) { $seedRef } else { 'HEAD' }
             & git checkout -B $PublishPlan.BranchName $workingBaseRef 2>&1 | Out-Null
@@ -4025,10 +4263,18 @@ function Publish-AzDoBranchSetupChanges {
             }
         }
         else {
-            $directBaseRef = if ($targetBranchExistsOnOrigin) { "origin/$ConfiguredBranch" } elseif ($seedRef) { $seedRef } else { 'HEAD' }
-            & git checkout -B $ConfiguredBranch $directBaseRef 2>&1 | Out-Null
-            if ($LASTEXITCODE -ne 0) {
-                throw "Failed to create or switch to target branch '$ConfiguredBranch'."
+            $directBaseRef = if ($targetBranchExistsOnOrigin) { "origin/$ConfiguredBranch" } elseif ($seedRef) { $seedRef } elseif ($hasLocalHeadCommit) { 'HEAD' } else { $null }
+            if ($directBaseRef) {
+                $checkoutOutput = @(& git checkout -B $ConfiguredBranch $directBaseRef 2>&1)
+                if ($LASTEXITCODE -ne 0) {
+                    throw "Failed to create or switch to target branch '$ConfiguredBranch' from '$directBaseRef': $($checkoutOutput -join ' ')"
+                }
+            }
+            else {
+                $checkoutOutput = @(& git checkout --orphan $ConfiguredBranch 2>&1)
+                if ($LASTEXITCODE -ne 0) {
+                    throw "Failed to create orphan target branch '$ConfiguredBranch': $($checkoutOutput -join ' ')"
+                }
             }
         }
 
@@ -4218,71 +4464,272 @@ function Invoke-AzDoBranchAwareSetup {
     }
 
     $initialBranchMappings = @(Get-AzDoInitialBranchMappings -ExistingSetupState $existingSetupState -DefaultBranch $DefaultBranch)
-    $existingEnvironmentConfigurations = @($existingSetupState.BranchStates | ForEach-Object { @($_.DeploymentEnvironments) } | Where-Object { $null -ne $_ })
-
-    $selectedBranchMappings = @(Select-BranchEnvironmentMappings `
-        -EnvironmentConfigurations $existingEnvironmentConfigurations `
-        -InitialBranchMappings $initialBranchMappings `
-        -Title 'Manage deployment branches' `
-        -GuidanceLines @(
-            'Start by listing the Git branches that should carry ALM4Dataverse automation. Each branch becomes its own setup track with branch-specific DEV and DEPLOY configuration.',
-            'Best practice: include only the branches that should really own a DEV environment or a DEPLOY pipeline so setup does not create noise on inactive branches.'
-        ) `
-        -DocRelativePath 'docs/setup/azdo-automated-setup.md' `
-        -Ref $ALM4DataverseRef `
-        -BranchOnly)
-
-    if ($selectedBranchMappings.Count -eq 0) {
-        throw 'At least one branch must be configured for Azure DevOps setup.'
-    }
-
     $branchStates = @()
-    foreach ($selectedBranchMapping in $selectedBranchMappings) {
+    foreach ($selectedBranchMapping in $initialBranchMappings) {
         $branchName = [string]$selectedBranchMapping.BranchName
         $existingBranchState = $existingSetupState.BranchStates | Where-Object { $_.BranchName -ieq $branchName } | Select-Object -First 1
-        $publishPlan = Get-BranchTargetedRepoChangePublishPlan `
-            -ProviderName 'Azure DevOps' `
-            -RepositoryName $MainRepo.Name `
-            -TargetBranch $branchName `
-            -DefaultCommitMessage "Add ALM4Dataverse Azure DevOps pipelines for branch '$branchName'" `
-            -DefaultPullRequestTitle "Add ALM4Dataverse Azure DevOps pipelines for branch '$branchName'" `
-            -DefaultPullRequestDescription "This pull request adds or updates the ALM4Dataverse Azure DevOps pipeline YAML and repository configuration generated by setup-azdo.ps1 for branch '$branchName'." `
-            -GuidanceLines @(
-                'If branch protection or approvals apply, choose the pull-request path so the generated YAML and config changes can be reviewed before they land.',
-                'If you commit directly, the target branch is updated immediately and the matching pipeline definitions can start using that branch as soon as the push completes.'
-            ) `
-            -DocRelativePath 'docs/setup/azdo-automated-setup.md' `
-            -Ref $ALM4DataverseRef
 
         $branchStates += New-AzDoBranchSetupState `
             -BranchName $branchName `
             -ExistingDevEnvironment $existingBranchState.ExistingDevEnvironment `
-            -DeploymentEnvironments @($existingBranchState.DeploymentEnvironments) `
-            -PublishPlan $publishPlan
+            -DeploymentEnvironments @($(if ($existingBranchState) { $existingBranchState.DeploymentEnvironments } else { $selectedBranchMapping.Environments })) `
+            -PublishPlan $null
     }
 
     $wizardState = [pscustomobject]@{
         BranchStates         = @($branchStates)
         SolutionData         = $null
         SolutionSourceBranch = $null
+        BranchEnvironmentMappingCompleted = $false
     }
 
     Set-SetupPhaseContext -PhaseNames $script:setupPhaseNames -CurrentPhaseIndex 2
     Invoke-SetupWizard -Title 'Azure DevOps ALM4Dataverse setup' -Steps @(
         [pscustomobject]@{
+            Name = 'Configure branches'
+            Action = {
+                $existingEnvironmentConfigurations = @($existingSetupState.BranchStates | ForEach-Object { @($_.DeploymentEnvironments) } | Where-Object { $null -ne $_ })
+                $currentBranchMappings = @($wizardState.BranchStates | ForEach-Object {
+                    [pscustomobject]@{
+                        BranchName                  = [string]$_.BranchName
+                        DevEnvironmentConfiguration = $_.DevEnvironmentConfiguration
+                        ExistingDevEnvironment      = $_.ExistingDevEnvironment
+                        Environments                = @($_.DeploymentEnvironments)
+                    }
+                })
+
+                $selectedBranchMappings = @(Select-BranchEnvironmentMappings `
+                    -EnvironmentConfigurations $existingEnvironmentConfigurations `
+                    -InitialBranchMappings $currentBranchMappings `
+                    -Title 'Manage deployment branches' `
+                    -GuidanceLines @(
+                        'Start by listing the Git branches that should carry ALM4Dataverse automation. Each branch becomes its own setup track with branch-specific DEV and DEPLOY configuration.',
+                        'Best practice: include only the branches that should really own a DEV environment or a DEPLOY pipeline so setup does not create noise on inactive branches.'
+                    ) `
+                    -DocRelativePath 'docs/setup/azdo-automated-setup.md' `
+                    -Ref $ALM4DataverseRef `
+                    -EditDevEnvironmentScriptBlock {
+                        param($allMappings, $mappingToEdit)
+
+                        Write-Section `
+                            -Message "DEV environment for branch '$($mappingToEdit.BranchName)'" `
+                            -GuidanceLines @(
+                                "Decide whether branch '$($mappingToEdit.BranchName)' should own a DEV environment.",
+                                'DEV configuration here enables branch-specific solution discovery.'
+                            ) `
+                            -GuidanceDocRelativePath 'docs/config/azdo-environment-service-connection.md' `
+                            -GuidanceRef $ALM4DataverseRef
+                        $existingDevEnvironment = $mappingToEdit.ExistingDevEnvironment
+                        $existingDevEnvironmentUrl = [string](Get-OptionalObjectPropertyValue -InputObject $existingDevEnvironment -PropertyName 'Url')
+                        $existingDevEnvironmentFriendlyName = [string](Get-OptionalObjectPropertyValue -InputObject $existingDevEnvironment -PropertyName 'FriendlyName')
+                        $existingDevEnvironmentCredential = Get-OptionalObjectPropertyValue -InputObject $existingDevEnvironment -PropertyName 'Credentials'
+                        $existingDevEnvironmentServiceAccountUPN = [string](Get-OptionalObjectPropertyValue -InputObject $existingDevEnvironment -PropertyName 'ServiceAccountUPN')
+
+                        if (-not [string]::IsNullOrWhiteSpace($existingDevEnvironmentUrl)) {
+                            Write-Host "Existing DEV environment: $existingDevEnvironmentFriendlyName ($existingDevEnvironmentUrl)" -ForegroundColor DarkGray
+                        }
+
+                        $configureDevEnvironment = Read-YesNo -Prompt "Configure a DEV environment for branch '$($mappingToEdit.BranchName)'?"
+                        if (-not $configureDevEnvironment) {
+                            return $null
+                        }
+
+                        $selectedDevEnvironment = Select-DataverseEnvironment -Prompt "Select the DEV environment for branch '$($mappingToEdit.BranchName)'" -PreferredUrl $existingDevEnvironmentUrl
+                        if (-not $selectedDevEnvironment) {
+                            return $mappingToEdit.DevEnvironmentConfiguration
+                        }
+
+                        $updatedDevConfiguration = Invoke-WithErrorHandling -OperationName "Selecting DEV environment credentials for branch '$($mappingToEdit.BranchName)'" -ScriptBlock {
+                            Get-AzDoEnvironmentConfiguration `
+                                -EnvironmentName "Dev-$($mappingToEdit.BranchName)" `
+                                -EnvironmentUrl (ConvertTo-NormalizedEnvironmentUrl -Url $selectedDevEnvironment.Endpoints['WebApplication']) `
+                                -FriendlyName $selectedDevEnvironment.FriendlyName `
+                                -ExistingCredentials $credentialsCache `
+                                -ExistingServiceAccounts $serviceAccountsCache `
+                                -TenantId $TenantId `
+                                -ProjectName $SelectedProject.Name `
+                                -OrganizationId $OrganizationId `
+                                -OrganizationName $OrganizationName `
+                                -UseAlm4DataverseExtension $UseAlm4DataverseExtension `
+                                -ExistingCredential $existingDevEnvironmentCredential `
+                                -ExistingServiceAccountUPN $existingDevEnvironmentServiceAccountUPN `
+                                -IsDevelopmentEnvironment $true
+                        }
+
+                        if ($updatedDevConfiguration -and -not ($credentialsCache | Where-Object { $_.ApplicationId -eq $updatedDevConfiguration.Credentials.ApplicationId -and $_.TenantId -eq $updatedDevConfiguration.Credentials.TenantId })) {
+                            $credentialsCache += $updatedDevConfiguration.Credentials
+                        }
+                        if ($updatedDevConfiguration -and $serviceAccountsCache -notcontains $updatedDevConfiguration.ServiceAccountUPN) {
+                            $serviceAccountsCache += $updatedDevConfiguration.ServiceAccountUPN
+                        }
+
+                        return $updatedDevConfiguration
+                    } `
+                    -EditDeploymentEnvironmentsScriptBlock {
+                        param($allMappings, $mappingToEdit)
+
+                        Write-Section `
+                            -Message "Deployment environments for branch '$($mappingToEdit.BranchName)'" `
+                            -GuidanceLines @(
+                                "Configure deployment targets for branch '$($mappingToEdit.BranchName)' in promotion order.",
+                                'These selections determine generated DEPLOY stage flow.'
+                            ) `
+                            -GuidanceDocRelativePath 'docs/setup/azdo-manual-setup.md' `
+                            -GuidanceRef $ALM4DataverseRef
+
+                        $excludedUrl = $null
+                        if ($mappingToEdit.DevEnvironmentConfiguration) {
+                            $excludedUrl = $mappingToEdit.DevEnvironmentConfiguration.Url
+                        }
+                        elseif ($mappingToEdit.ExistingDevEnvironment) {
+                            $excludedUrl = [string](Get-OptionalObjectPropertyValue -InputObject $mappingToEdit.ExistingDevEnvironment -PropertyName 'Url')
+                        }
+
+                        $updatedDeploymentEnvironments = @(Invoke-WithErrorHandling -OperationName "Selecting deployment environments for branch '$($mappingToEdit.BranchName)'" -ScriptBlock {
+                            Get-DataverseEnvironmentsSelection `
+                                -ExcludedUrl $excludedUrl `
+                                -Branch $mappingToEdit.BranchName `
+                                -ProjectName $SelectedProject.Name `
+                                -InitialEnvironments @($mappingToEdit.Environments) `
+                                -ExistingCredentials $credentialsCache `
+                                -ExistingServiceAccounts $serviceAccountsCache `
+                                -TenantId $TenantId `
+                                -OrganizationId $OrganizationId `
+                                -OrganizationName $OrganizationName `
+                                -UseAlm4DataverseExtension $UseAlm4DataverseExtension
+                        })
+
+                        foreach ($deploymentEnvironment in @($updatedDeploymentEnvironments)) {
+                            if ($deploymentEnvironment.Credentials -and -not ($credentialsCache | Where-Object { $_.ApplicationId -eq $deploymentEnvironment.Credentials.ApplicationId -and $_.TenantId -eq $deploymentEnvironment.Credentials.TenantId })) {
+                                $credentialsCache += $deploymentEnvironment.Credentials
+                            }
+                            if (-not [string]::IsNullOrWhiteSpace($deploymentEnvironment.ServiceAccountUPN) -and $serviceAccountsCache -notcontains $deploymentEnvironment.ServiceAccountUPN) {
+                                $serviceAccountsCache += $deploymentEnvironment.ServiceAccountUPN
+                            }
+                        }
+
+                        return @($updatedDeploymentEnvironments)
+                    })
+
+                if ($selectedBranchMappings.Count -eq 0) {
+                    throw 'At least one branch must be configured for Azure DevOps setup.'
+                }
+
+                $existingStateByBranch = @{}
+                foreach ($branchState in @($wizardState.BranchStates)) {
+                    $existingStateByBranch[$branchState.BranchName.ToLowerInvariant()] = $branchState
+                }
+
+                $updatedBranchStates = @()
+                foreach ($selectedBranchMapping in $selectedBranchMappings) {
+                    $branchName = [string]$selectedBranchMapping.BranchName
+                    $branchKey = $branchName.ToLowerInvariant()
+
+                    $existingBranchState = $null
+                    if ($existingStateByBranch.ContainsKey($branchKey)) {
+                        $existingBranchState = $existingStateByBranch[$branchKey]
+                        $existingBranchState.DevEnvironmentConfiguration = $selectedBranchMapping.DevEnvironmentConfiguration
+                        $existingBranchState.DeploymentEnvironments = @($selectedBranchMapping.Environments)
+                    }
+                    if (-not $existingBranchState) {
+                        $existingBranchState = $existingSetupState.BranchStates | Where-Object { $_.BranchName -ieq $branchName } | Select-Object -First 1
+                    }
+
+                    $publishPlan = Get-BranchTargetedRepoChangePublishPlan `
+                        -ProviderName 'Azure DevOps' `
+                        -RepositoryName $MainRepo.Name `
+                        -TargetBranch $branchName `
+                        -DefaultCommitMessage "Add ALM4Dataverse Azure DevOps pipelines for branch '$branchName'" `
+                        -DefaultPullRequestTitle "Add ALM4Dataverse Azure DevOps pipelines for branch '$branchName'" `
+                        -DefaultPullRequestDescription "This pull request adds or updates the ALM4Dataverse Azure DevOps pipeline YAML and repository configuration generated by setup-azdo.ps1 for branch '$branchName'." `
+                        -GuidanceLines @(
+                            'If branch protection or approvals apply, choose the pull-request path so the generated YAML and config changes can be reviewed before they land.',
+                            'If you commit directly, the target branch is updated immediately and the matching pipeline definitions can start using that branch as soon as the push completes.'
+                        ) `
+                        -DocRelativePath 'docs/setup/azdo-automated-setup.md' `
+                        -Ref $ALM4DataverseRef
+
+                    $updatedBranchStates += New-AzDoBranchSetupState `
+                        -BranchName $branchName `
+                        -ExistingDevEnvironment $(if ($existingBranchState) { $existingBranchState.ExistingDevEnvironment } else { $null }) `
+                        -DeploymentEnvironments @($(if ($existingBranchState) { $existingBranchState.DeploymentEnvironments } else { @() })) `
+                        -PublishPlan $publishPlan
+                }
+
+                $wizardState.BranchStates = @($updatedBranchStates | Sort-Object BranchName)
+
+                $branchMappingsForValidation = @($wizardState.BranchStates | ForEach-Object {
+                    [pscustomobject]@{
+                        BranchName   = [string]$_.BranchName
+                        Environments = @($_.DeploymentEnvironments)
+                    }
+                })
+                if (Test-BranchEnvironmentMappingsHaveDuplicates -BranchMappings $branchMappingsForValidation) {
+                    throw 'Each deployment environment can only be assigned to one branch. Resolve duplicate environment assignments before continuing.'
+                }
+
+                $branchesWithNoEnvironments = @($selectedBranchMappings | Where-Object {
+                    ($null -eq $_.DevEnvironmentConfiguration) -and (@($_.Environments).Count -eq 0)
+                } | ForEach-Object { $_.BranchName })
+                if ($branchesWithNoEnvironments.Count -gt 0) {
+                    $branchList = ($branchesWithNoEnvironments -join ', ')
+                    throw "Each configured branch must have at least one mapped environment (DEV or deployment). Remove unused branches or configure environments for: $branchList"
+                }
+
+                $wizardState.BranchStates = @($selectedBranchMappings | ForEach-Object {
+                    $mappedBranch = $_
+                    $existingBranchState = $updatedBranchStates | Where-Object { $_.BranchName -ieq $mappedBranch.BranchName } | Select-Object -First 1
+                    if (-not $existingBranchState) {
+                        $existingBranchState = New-AzDoBranchSetupState -BranchName ([string]$mappedBranch.BranchName) -ExistingDevEnvironment $null -DeploymentEnvironments @() -PublishPlan $null
+                    }
+
+                    $existingBranchState.DevEnvironmentConfiguration = $mappedBranch.DevEnvironmentConfiguration
+                    $existingBranchState.DeploymentEnvironments = @($mappedBranch.Environments)
+                    $existingBranchState
+                })
+
+                $wizardState.BranchEnvironmentMappingCompleted = $true
+            }
+        },
+        [pscustomobject]@{
             Name = 'Configure DEV access'
             Action = {
-                Write-Section 'Configure branch-specific DEV environments'
+                if ($wizardState.BranchEnvironmentMappingCompleted) {
+                    [Spectre.Console.AnsiConsole]::MarkupLine('[grey]DEV environments were already configured while defining branches.[/]')
+                    return
+                }
+
+                Write-Section `
+                    -Message 'Configure branch-specific DEV environments' `
+                    -GuidanceLines @(
+                        'Review DEV ownership across all configured branches and capture credentials where needed.',
+                        'Branches without DEV remain deploy-only and cannot be solution sources.'
+                    ) `
+                    -GuidanceDocRelativePath 'docs/config/azdo-environment-service-connection.md' `
+                    -GuidanceRef $ALM4DataverseRef
                 Write-SetupGuidance -Lines @(
                     'Decide branch by branch whether you want a dedicated DEV environment. This is optional, but only branches with a DEV environment can be used for solution selection later.',
                     'Best practice: keep the DEV short name aligned to the branch (for example Dev-main, Dev-release) so EXPORT and BUILD stay easy to reason about.'
-                ) -DocRelativePath 'docs/config/azdo-environment-service-connection.md' -Ref $ALM4DataverseRef
+                ) -DocRelativePath 'docs/config/azdo-environment-service-connection.md' -Ref $ALM4DataverseRef -Header 'Branch DEV strategy guidance'
 
                 foreach ($branchState in @($wizardState.BranchStates)) {
-                    Write-Section "DEV environment for branch '$($branchState.BranchName)'"
+                    Write-Section `
+                        -Message "DEV environment for branch '$($branchState.BranchName)'" `
+                        -GuidanceLines @(
+                            "Configure DEV credentials and service-account ownership for branch '$($branchState.BranchName)'.",
+                            'Reuse existing values when they already match target environment requirements.'
+                        ) `
+                        -GuidanceDocRelativePath 'docs/config/azdo-environment-service-connection.md' `
+                        -GuidanceRef $ALM4DataverseRef
 
-                    if ($branchState.ExistingDevEnvironment -and -not [string]::IsNullOrWhiteSpace($branchState.ExistingDevEnvironment.Url)) {
-                        Write-Host "Existing DEV environment: $($branchState.ExistingDevEnvironment.FriendlyName) ($($branchState.ExistingDevEnvironment.Url))" -ForegroundColor DarkGray
+                    $existingDevEnvironment = $branchState.ExistingDevEnvironment
+                    $existingDevEnvironmentUrl = [string](Get-OptionalObjectPropertyValue -InputObject $existingDevEnvironment -PropertyName 'Url')
+                    $existingDevEnvironmentFriendlyName = [string](Get-OptionalObjectPropertyValue -InputObject $existingDevEnvironment -PropertyName 'FriendlyName')
+                    $existingDevEnvironmentCredential = Get-OptionalObjectPropertyValue -InputObject $existingDevEnvironment -PropertyName 'Credentials'
+                    $existingDevEnvironmentServiceAccountUPN = [string](Get-OptionalObjectPropertyValue -InputObject $existingDevEnvironment -PropertyName 'ServiceAccountUPN')
+
+                    if (-not [string]::IsNullOrWhiteSpace($existingDevEnvironmentUrl)) {
+                        Write-Host "Existing DEV environment: $existingDevEnvironmentFriendlyName ($existingDevEnvironmentUrl)" -ForegroundColor DarkGray
                     }
 
                     $configureDevEnvironment = Read-YesNo -Prompt "Configure a DEV environment for branch '$($branchState.BranchName)'?"
@@ -4291,7 +4738,7 @@ function Invoke-AzDoBranchAwareSetup {
                         continue
                     }
 
-                    $selectedDevEnvironment = Select-DataverseEnvironment -Prompt "Select the DEV environment for branch '$($branchState.BranchName)'" -PreferredUrl $branchState.ExistingDevEnvironment.Url
+                    $selectedDevEnvironment = Select-DataverseEnvironment -Prompt "Select the DEV environment for branch '$($branchState.BranchName)'" -PreferredUrl $existingDevEnvironmentUrl
                     if (-not $selectedDevEnvironment) {
                         throw "No DEV environment selected for branch '$($branchState.BranchName)'."
                     }
@@ -4308,8 +4755,8 @@ function Invoke-AzDoBranchAwareSetup {
                             -OrganizationId $OrganizationId `
                             -OrganizationName $OrganizationName `
                             -UseAlm4DataverseExtension $UseAlm4DataverseExtension `
-                            -ExistingCredential $branchState.ExistingDevEnvironment.Credentials `
-                            -ExistingServiceAccountUPN $branchState.ExistingDevEnvironment.ServiceAccountUPN `
+                            -ExistingCredential $existingDevEnvironmentCredential `
+                            -ExistingServiceAccountUPN $existingDevEnvironmentServiceAccountUPN `
                             -IsDevelopmentEnvironment $true
                     }
 
@@ -4325,26 +4772,46 @@ function Invoke-AzDoBranchAwareSetup {
         [pscustomobject]@{
             Name = 'Configure deployment environments'
             Action = {
-                Write-Section 'Configure branch-specific deployment environments'
+                if ($wizardState.BranchEnvironmentMappingCompleted) {
+                    [Spectre.Console.AnsiConsole]::MarkupLine('[grey]Deployment environments were already configured while defining branches.[/]')
+                    return
+                }
+
+                Write-Section `
+                    -Message 'Configure branch-specific deployment environments' `
+                    -GuidanceLines @(
+                        'Assign deployment targets for each branch and keep stage naming consistent.',
+                        'Remove unused branch deployments intentionally to avoid stale pipeline behavior.'
+                    ) `
+                    -GuidanceDocRelativePath 'docs/setup/azdo-manual-setup.md' `
+                    -GuidanceRef $ALM4DataverseRef
                 Write-SetupGuidance -Lines @(
                     'Choose the deployment environments for each branch in promotion order. Setup will generate one DEPLOY YAML per configured branch.',
                     'Best practice: leave a branch empty if it should not own a DEPLOY pipeline yet. The matching DEPLOY YAML will be removed instead of left stale.'
-                ) -DocRelativePath 'docs/setup/azdo-manual-setup.md' -Ref $ALM4DataverseRef
+                ) -DocRelativePath 'docs/setup/azdo-manual-setup.md' -Ref $ALM4DataverseRef -Header 'Branch deployment strategy guidance'
 
                 foreach ($branchState in @($wizardState.BranchStates)) {
-                    Write-Section "Deployment environments for branch '$($branchState.BranchName)'"
+                    Write-Section `
+                        -Message "Deployment environments for branch '$($branchState.BranchName)'" `
+                        -GuidanceLines @(
+                            "Manage deployment stages for branch '$($branchState.BranchName)' and validate URLs/credentials.",
+                            'Confirm exclusivity so each environment belongs to one branch mapping only.'
+                        ) `
+                        -GuidanceDocRelativePath 'docs/usage/deploying.md' `
+                        -GuidanceRef $ALM4DataverseRef
 
                     $excludedUrl = $null
                     if ($branchState.DevEnvironmentConfiguration) {
                         $excludedUrl = $branchState.DevEnvironmentConfiguration.Url
                     }
                     elseif ($branchState.ExistingDevEnvironment) {
-                        $excludedUrl = $branchState.ExistingDevEnvironment.Url
+                        $excludedUrl = [string](Get-OptionalObjectPropertyValue -InputObject $branchState.ExistingDevEnvironment -PropertyName 'Url')
                     }
 
                     $branchState.DeploymentEnvironments = @(Invoke-WithErrorHandling -OperationName "Selecting deployment environments for branch '$($branchState.BranchName)'" -ScriptBlock {
                         Get-DataverseEnvironmentsSelection `
                             -ExcludedUrl $excludedUrl `
+                            -Branch $branchState.BranchName `
                             -ProjectName $SelectedProject.Name `
                             -InitialEnvironments @($branchState.DeploymentEnvironments) `
                             -ExistingCredentials $credentialsCache `
@@ -4364,12 +4831,27 @@ function Invoke-AzDoBranchAwareSetup {
                         }
                     }
                 }
+
+                $branchesWithNoEnvironments = @($wizardState.BranchStates | Where-Object {
+                    ($null -eq $_.DevEnvironmentConfiguration) -and (@($_.DeploymentEnvironments).Count -eq 0)
+                } | ForEach-Object { $_.BranchName })
+                if ($branchesWithNoEnvironments.Count -gt 0) {
+                    $branchList = ($branchesWithNoEnvironments -join ', ')
+                    throw "Each configured branch must have at least one mapped environment (DEV or deployment). Remove unused branches or configure environments for: $branchList"
+                }
             }
         },
         [pscustomobject]@{
             Name = 'Select solutions'
             Action = {
-                Write-Section 'Select solutions from a configured DEV branch'
+                Write-Section `
+                    -Message 'Select solutions from a configured DEV branch' `
+                    -GuidanceLines @(
+                        'Choose which DEV branch should source solution metadata for alm-config.psd1.',
+                        'Only branches with DEV environments are available for this step.'
+                    ) `
+                    -GuidanceDocRelativePath 'docs/config/alm-config.md' `
+                    -GuidanceRef $ALM4DataverseRef
                 $solutionCandidateBranches = @($wizardState.BranchStates | Where-Object { $_.DevEnvironmentConfiguration })
                 if ($solutionCandidateBranches.Count -eq 0) {
                     [Spectre.Console.AnsiConsole]::MarkupLine('[yellow]No branch has a DEV environment configured, so solution selection will be skipped for now.[/]')
@@ -4395,7 +4877,7 @@ function Invoke-AzDoBranchAwareSetup {
                 Write-SetupGuidance -Lines @(
                     "Solutions are selected last so they can be sourced from the exact DEV branch you trust for this setup run.",
                     'Best practice: pick the branch whose DEV environment currently reflects the solution set you want in source control.'
-                ) -DocRelativePath 'docs/config/alm-config.md' -Ref $ALM4DataverseRef
+                ) -DocRelativePath 'docs/config/alm-config.md' -Ref $ALM4DataverseRef -Header 'Solution source branch guidance'
 
                 $existingConfigTempPath = $null
                 try {
@@ -4421,7 +4903,14 @@ function Invoke-AzDoBranchAwareSetup {
         [pscustomobject]@{
             Name = 'Review choices'
             Action = {
-                Write-Section 'Review Dataverse environment configuration'
+                Write-Section `
+                    -Message 'Review Dataverse environment configuration' `
+                    -GuidanceLines @(
+                        'Review branch mappings, environment settings, and publish modes before applying changes.',
+                        'Use Back now for corrections to avoid manual post-setup cleanup.'
+                    ) `
+                    -GuidanceDocRelativePath 'docs/setup/azdo-automated-setup.md' `
+                    -GuidanceRef $ALM4DataverseRef
 
                 $allConfiguredEnvironments = @()
                 foreach ($branchState in @($wizardState.BranchStates)) {
@@ -4537,7 +5026,14 @@ $script:yamlFiles = @(
 )
 $script:yamlFiles += @($branchStates | Where-Object { @($_.DeploymentEnvironments).Count -gt 0 } | ForEach-Object { "pipelines/DEPLOY-$($_.BranchName).yml" })
 
-Write-Section 'Ensuring Build Service has Contribute on main repo'
+Write-Section `
+    -Message 'Ensuring Build Service has Contribute on main repo' `
+    -GuidanceLines @(
+        'Grant build service identity the repository permissions required by generated pipelines.',
+        'Without contribute rights, automation that writes tags or commits can fail.'
+    ) `
+    -GuidanceDocRelativePath 'docs/setup/azdo-manual-setup.md' `
+    -GuidanceRef $ALM4DataverseRef
 Invoke-WithErrorHandling -OperationName 'Setting Up Build Service Permissions' -StatusMessage 'Granting build service permissions for the main repository...' -CaptureOutputInPanel -ScriptBlock {
     Ensure-AzDoBuildServiceHasContributeOnRepo -Organization $orgName -ProjectName $selectedProject.Name -ProjectId $selectedProject.Id -RepositoryId $mainRepo.Id
 } | Out-Null
@@ -4546,7 +5042,14 @@ Invoke-WithErrorHandling -OperationName 'Creating Pipeline Definitions' -StatusM
     Ensure-AzDoPipelinesForMainRepo -Organization $orgName -Project $selectedProject.Name -Repository $mainRepo -YamlFiles $script:yamlFiles -FolderPath "\$($mainRepo.Name)"
 } | Out-Null
 
-Write-Section 'Authorizing pipelines for repositories'
+Write-Section `
+    -Message 'Authorizing pipelines for repositories' `
+    -GuidanceLines @(
+        'Authorize created pipeline definitions to access both main and shared repositories.',
+        'This avoids first-run permission prompts and blocked pipeline executions.'
+    ) `
+    -GuidanceDocRelativePath 'docs/setup/azdo-manual-setup.md' `
+    -GuidanceRef $ALM4DataverseRef
 Invoke-WithErrorHandling -OperationName 'Authorizing Pipelines for Repositories' -AllowSkip -StatusMessage 'Authorizing pipelines to access the required repositories...' -CaptureOutputInPanel -ScriptBlock {
     $pipelineNames = @($script:yamlFiles | ForEach-Object { [System.IO.Path]::GetFileNameWithoutExtension($_) } | Select-Object -Unique)
     $allPipelines = Get-VSTeamBuildDefinition -ProjectName $selectedProject.Name
@@ -4582,7 +5085,14 @@ foreach ($branchState in @($branchStates)) {
 if (-not $exportPipeline) { Write-Warning 'EXPORT pipeline not found. Skipping some DEV authorizations.' }
 
 Set-SetupPhaseContext -PhaseNames $script:setupPhaseNames -CurrentPhaseIndex 3
-Write-Section 'Configure DEV environments'
+Write-Section `
+    -Message 'Configure DEV environments' `
+    -GuidanceLines @(
+        'Apply DEV environment resources (service connections, users, variable groups) for configured branches.',
+        'Resolve permission issues here before deployment-stage setup begins.'
+    ) `
+    -GuidanceDocRelativePath 'docs/config/azdo-environment-service-connection.md' `
+    -GuidanceRef $ALM4DataverseRef
 
 $devBranchStates = @($branchStates | Where-Object { $_.DevEnvironmentConfiguration })
 if ($devBranchStates.Count -eq 0) {
@@ -4609,7 +5119,14 @@ else {
 }
 
 Set-SetupPhaseContext -PhaseNames $script:setupPhaseNames -CurrentPhaseIndex 4
-Write-Section 'Configure deployment environments'
+Write-Section `
+    -Message 'Configure deployment environments' `
+    -GuidanceLines @(
+        'Apply deployment environment resources and permissions used by DEPLOY pipelines.',
+        'Validate each stage has correct variable groups and Dataverse access.'
+    ) `
+    -GuidanceDocRelativePath 'docs/config/azdo-environment-variable-group.md' `
+    -GuidanceRef $ALM4DataverseRef
 
 $deploymentBranchStates = @($branchStates | Where-Object { @($_.DeploymentEnvironments).Count -gt 0 })
 if ($deploymentBranchStates.Count -eq 0) {
@@ -4623,7 +5140,14 @@ else {
         }
 
         foreach ($deploymentEnvironment in @($branchState.DeploymentEnvironments)) {
-            Write-Section "Applying environment configuration for '$($deploymentEnvironment.ShortName)' on branch '$($branchState.BranchName)'"
+            Write-Section `
+                -Message "Applying environment configuration for '$($deploymentEnvironment.ShortName)' on branch '$($branchState.BranchName)'" `
+                -GuidanceLines @(
+                    "Apply branch-scoped deployment configuration for environment '$($deploymentEnvironment.ShortName)'.",
+                    'This step configures service connections, variable groups, and security assignments.'
+                ) `
+                -GuidanceDocRelativePath 'docs/config/azdo-environment-variable-group.md' `
+                -GuidanceRef $ALM4DataverseRef
             Invoke-WithErrorHandling -OperationName "Applying environment configuration for '$($deploymentEnvironment.ShortName)' on branch '$($branchState.BranchName)'" -AllowSkip -ScriptBlock {
                 Apply-AzDoEnvironmentConfiguration `
                     -EnvironmentConfiguration $deploymentEnvironment `
